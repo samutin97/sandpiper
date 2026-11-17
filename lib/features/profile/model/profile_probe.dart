@@ -7,7 +7,7 @@ import 'package:meta/meta.dart';
 /// Header value (ASCII, at most [maxLength] characters): `key=value` pairs separated by `;`, spaces
 /// around a pair, a key or a value ignored, keys in lower case:
 ///
-///     profile-probe: get=/files/sample.bin;size=200000;post=/upload;up=262144
+///     profile-probe: get=/files/sample.bin;size=131072;post=/upload;up=262144
 ///
 /// - `get` (required): the path of a file on the subscription's host that the check downloads (it asks
 ///   for the first 64 KiB with a `Range` header).

@@ -6,10 +6,10 @@ import 'package:hiddify/features/profile/model/profile_probe.dart';
 void main() {
   group('profile-probe header', () {
     test('reads every field', () {
-      final probe = ProfileProbe.parse('get=/files/sample.bin;size=200000;post=/upload;up=262144');
-      expect(probe, const ProfileProbe(getPath: '/files/sample.bin', size: 200000, postPath: '/upload', uploadLimit: 262144));
+      final probe = ProfileProbe.parse('get=/files/sample.bin;size=131072;post=/upload;up=262144');
+      expect(probe, const ProfileProbe(getPath: '/files/sample.bin', size: 131072, postPath: '/upload', uploadLimit: 262144));
       expect(probe!.canUpload, isTrue);
-      expect(probe.encode(), 'get=/files/sample.bin;size=200000;post=/upload;up=262144');
+      expect(probe.encode(), 'get=/files/sample.bin;size=131072;post=/upload;up=262144');
     });
 
     test('needs only get; spaces, an empty pair and unknown keys do not matter', () {
