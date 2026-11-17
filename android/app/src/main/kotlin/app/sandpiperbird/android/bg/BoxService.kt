@@ -480,10 +480,44 @@ class BoxService(
 
     /** SP3-02: holds [pfd], a TUN nothing reads, until the core's own replaces it (openTun) or a stop. */
     fun holdTun(pfd: ParcelFileDescriptor) {
-        fileDescriptor?.let { previous -> runCatching { previous.close() } }
-        fileDescriptor = pfd
-        tunIsBlocking = true
+        val previous = synchronized(tunLock) {
+            val previous = fileDescriptor
+            fileDescriptor = pfd
+            tunIsBlocking = true
+            previous
+        }
+        previous?.let { runCatching { it.close() } }
         running = true
+    }
+
+    private val tunLock = Any()
+
+    /** The core's TUN [pfd] replaces the one held (a blocking one, or the core's previous); returns that. */
+    fun takeCoreTun(pfd: ParcelFileDescriptor): ParcelFileDescriptor? = synchronized(tunLock) {
+        val previous = fileDescriptor
+        fileDescriptor = pfd
+        tunIsBlocking = false
+        previous
+    }
+
+    /**
+     * SP4-01: the blocking TUN of a start by the user, if the core's TUN has not replaced it by now:
+     * the start failed. A failed start of the service (stopped with an alert) stops as a Stop would;
+     * a core that never opened its TUN leaves the service as it was without the blocking TUN. A
+     * start without the app keeps its blocking TUN until the user's Stop (SP3-02), and does not
+     * come here. Runs on the main thread.
+     */
+    fun releaseBlockingTun(pfd: ParcelFileDescriptor) {
+        val released = synchronized(tunLock) {
+            if (!tunIsBlocking || fileDescriptor !== pfd) return
+            if (status.value == Status.Stopped) null else pfd.also { fileDescriptor = null }
+        }
+        Log.i(TAG, "the core's TUN did not come: releasing the blocking TUN")
+        if (released == null) {
+            stopService()
+        } else {
+            runCatching { released.close() }
+        }
     }
 
     /**

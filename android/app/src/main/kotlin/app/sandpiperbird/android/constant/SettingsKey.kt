@@ -24,6 +24,9 @@ object SettingsKey {
 
     const val START_CORE_ON_STARTING_SERVICE = "${KEY_PREFIX}starting_core_on_starting_service"
 
+    // SP4-01: the per-app list of the core's last TUN, for the blocking TUN of the next start
+    const val LAST_TUN_APPS = "${KEY_PREFIX}last_tun_apps"
+
     const val WORKING_DIR = "working_dir"
     const val BASE_DIR = "base_dir"
     const val TMP_DIR = "tmp_dir"

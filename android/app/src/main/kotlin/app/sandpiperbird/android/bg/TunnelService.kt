@@ -27,6 +27,13 @@ class TunnelService : VpnService(), PlatformInterfaceWrapper {
     companion object {
         private const val TAG = "A/TunnelService"
 
+        /**
+         * SP4-01: how long the blocking TUN of a start by the user waits for the core's own. The core
+         * opens it within seconds of the start; one that never comes is a failed start, and traffic
+         * then goes as without the VPN, as before.
+         */
+        private const val USER_START_BLOCK_MS = 30_000L
+
         /** The running VPN, for the network monitor. */
         @Volatile
         var current: TunnelService? = null
@@ -81,7 +88,14 @@ class TunnelService : VpnService(), PlatformInterfaceWrapper {
         // SP3-02: blocked first, connected after. Between this start and the core's own TUN nothing
         // may leave around the VPN, nor stay so when the core cannot start (the TUN is then kept until
         // the user's Stop, see BoxService.stopAndAlert).
-        if (withoutApp && service.isIdle()) holdBlockingTun()
+        // SP4-01: a start by the user holds it too. The VPN network then exists, with the rules that
+        // send its apps' traffic to it, before the core's TUN brings the DNS server: Android hands
+        // the same network over to the core's TUN and checks its DNS server through the tunnel.
+        // Made with the DNS server at once, the network was new, and Android 14 began its private DNS
+        // check before those rules were in place: the first SYN to the TUN's DNS address, port 853,
+        // left on Wi-Fi or the mobile network. A start by the user that never brings the core's TUN
+        // (a failed start, see BoxService.releaseBlockingTun) lets go of it after a while, as before.
+        if (service.isIdle()) holdBlockingTun(if (withoutApp) null else USER_START_BLOCK_MS)
         return service.onStartCommand()
     }
 
@@ -92,7 +106,7 @@ class TunnelService : VpnService(), PlatformInterfaceWrapper {
      * previous descriptor); a stop releases it. Without the VPN permission (revoked) it cannot be made,
      * and the core's start then fails the same way.
      */
-    private fun holdBlockingTun() {
+    private fun holdBlockingTun(releaseAfterMs: Long?) {
         if (prepare(this) != null) {
             Log.w(TAG, "no VPN permission: no blocking TUN")
             return
@@ -101,14 +115,24 @@ class TunnelService : VpnService(), PlatformInterfaceWrapper {
             val random = java.security.SecureRandom()
             val v4 = "10.${64 + random.nextInt(64)}.${random.nextInt(256)}.${1 + random.nextInt(254)}"
             val v6 = "fd%02x:%x:%x::%x".format(random.nextInt(256), random.nextInt(65536), random.nextInt(65536), 1 + random.nextInt(0xfffe))
-            val pfd = Builder()
+            val builder = Builder()
                 .setSession(getString(R.string.app_name))
                 .setMtu(1280)
                 .addAddress(v4, 32)
                 .addRoute("0.0.0.0", 0)
                 .addAddress(v6, 128)
                 .addRoute("::", 0)
-                .establish()
+            // SP4-01: the apps of the core's last TUN. Android hands a VPN network over to a new TUN
+            // only when its allowed and disallowed apps are the same; otherwise it makes a new network.
+            val apps = TunApps.decode(Settings.lastTunApps)
+            for (packageName in apps.packages) {
+                try {
+                    if (apps.mode == TunApps.INCLUDE) builder.addAllowedApplication(packageName)
+                    else builder.addDisallowedApplication(packageName)
+                } catch (_: NameNotFoundException) {
+                }
+            }
+            val pfd = builder.establish()
             if (pfd == null) {
                 Log.w(TAG, "the blocking TUN was not made")
                 return
@@ -116,6 +140,10 @@ class TunnelService : VpnService(), PlatformInterfaceWrapper {
             service.holdTun(pfd)
             current = this
             Log.i(TAG, "holding a blocking TUN until the core is up")
+            if (releaseAfterMs != null) {
+                android.os.Handler(android.os.Looper.getMainLooper())
+                    .postDelayed({ service.releaseBlockingTun(pfd) }, releaseAfterMs)
+            }
         } catch (e: Exception) {
             Log.w(TAG, "cannot make the blocking TUN", e)
         }
@@ -157,6 +185,11 @@ class TunnelService : VpnService(), PlatformInterfaceWrapper {
 
     var systemProxyAvailable = false
     var systemProxyEnabled = false
+
+    /** SP4-01: the apps the TUN being built took, saved for the blocking TUN of the next start. */
+    private val tunIncluded = mutableListOf<String>()
+    private val tunExcluded = mutableListOf<String>()
+
     fun addIncludePackage(builder: Builder, packageName: String) {
         if (packageName == this.packageName && !CoreCaps.protectsOwnSockets) {
             Log.d("VpnService","Cannot include myself: $packageName")
@@ -165,6 +198,7 @@ class TunnelService : VpnService(), PlatformInterfaceWrapper {
         try {     
             Log.d("VpnService","Including $packageName")
             builder.addAllowedApplication(packageName)
+            tunIncluded.add(packageName)
         } catch (e: NameNotFoundException) {
         }
     }
@@ -178,6 +212,7 @@ class TunnelService : VpnService(), PlatformInterfaceWrapper {
         try {     
             Log.d("VpnService","Excluding $packageName")
             builder.addDisallowedApplication(packageName)
+            tunExcluded.add(packageName)
         } catch (e: NameNotFoundException) {
         }
     }
@@ -202,6 +237,8 @@ class TunnelService : VpnService(), PlatformInterfaceWrapper {
         val builder = Builder()
             .setSession(getString(R.string.app_name))
             .setMtu(options.mtu)
+        tunIncluded.clear()
+        tunExcluded.clear()
 
         // L-03: no setMetered(false). The VPN is metered when the network under it is: on mobile data
         // the system and apps hold back large downloads, as without the VPN.
@@ -332,10 +369,9 @@ class TunnelService : VpnService(), PlatformInterfaceWrapper {
         // D-06: a rebuilt tunnel (per-app list, settings) left the previous interface behind, DOWN, as
         // long as this side held its descriptor: libbox works on a dup of the fd (OpenInterface), so the
         // previous one is closed here, and the interface goes once the core closes its own copy.
-        val previous = service.fileDescriptor
-        service.fileDescriptor = pfd
-        service.tunIsBlocking = false
+        val previous = service.takeCoreTun(pfd)
         if (previous != null && previous !== pfd) runCatching { previous.close() }
+        Settings.lastTunApps = TunApps.encode(TunApps.of(tunIncluded, tunExcluded))
         current = this
         return pfd.fd
     }

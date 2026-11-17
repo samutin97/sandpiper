@@ -180,6 +180,11 @@ object Settings {
         get() = preferences.getInt(SettingsKey.GRPC_PORT, 17078)!!
         set(value) = preferences.edit().putInt(SettingsKey.GRPC_PORT, value).apply()
 
+    /** SP4-01: the per-app list of the core's last TUN, as [app.sandpiperbird.android.bg.TunApps] encodes it. */
+    var lastTunApps: String
+        get() = preferences.getString(SettingsKey.LAST_TUN_APPS, "")!!
+        set(value) = preferences.edit().putString(SettingsKey.LAST_TUN_APPS, value).apply()
+
     var startCoreAfterStartingService: Boolean
         get() = preferences.getBoolean(SettingsKey.START_CORE_ON_STARTING_SERVICE, false)
         set(value) = preferences.edit().putBoolean(SettingsKey.START_CORE_ON_STARTING_SERVICE, value).apply()
