@@ -62,6 +62,10 @@ class SingboxConfigOption with _$SingboxConfigOption {
 
     /// The profile's proxies the user chose to run, and only them (`keep-tags`).
     @Default(<String>[]) List<String> keepTags,
+
+    /// The subscription server's ranking of its proxies for the core (`tier-policy`: `policy`,
+    /// `probe-host`, `probe-path`), from the active profile only; null without one.
+    Map<String, dynamic>? tierPolicy,
     @IntervalInSecondsConverter() required Duration urlTestInterval,
     required bool enableClashApi,
     required int clashApiPort,

@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:dartx/dartx.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:hiddify/features/profile/data/profile_parser.dart';
+import 'package:hiddify/features/profile/model/profile_policy.dart';
 import 'package:hiddify/features/profile/model/profile_probe.dart';
 
 part 'profile_entity.freezed.dart';
@@ -43,11 +44,23 @@ sealed class ProfileEntity with _$ProfileEntity {
     @Default(false) bool pinned,
   }) = LocalProfileEntity;
 
-  String profileOverride() =>
-      ProfileParser.profileOverride(populatedHeaders: populatedHeaders, userOverride: userOverride);
+  String profileOverride() => ProfileParser.profileOverride(
+    populatedHeaders: populatedHeaders,
+    userOverride: userOverride,
+    subscriptionUrl: switch (this) {
+      RemoteProfileEntity(:final url) => url,
+      _ => null,
+    },
+  );
 
   /// The path check's endpoints the subscription's server gave (`profile-probe`), if any.
   ProfileProbe? get probe => ProfileProbe.parse(populatedHeaders?[ProfileProbe.headerName]);
+
+  /// The server's ranking of its proxies (`profile-policy`), if it gave a non-empty one.
+  ProfilePolicy? get policy {
+    final policy = ProfilePolicy.parse(populatedHeaders?[ProfilePolicy.headerName]);
+    return policy == null || policy.isEmpty ? null : policy;
+  }
 }
 
 @freezed

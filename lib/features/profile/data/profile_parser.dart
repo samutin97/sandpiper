@@ -10,6 +10,7 @@ import 'package:hiddify/core/model/optional_range.dart';
 import 'package:hiddify/features/profile/data/profile_data_mapper.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/model/profile_failure.dart';
+import 'package:hiddify/features/profile/model/profile_policy.dart';
 import 'package:hiddify/features/profile/model/profile_probe.dart';
 import 'package:hiddify/singbox/model/singbox_config_enum.dart';
 import 'package:hiddify/singbox/model/singbox_proxy_type.dart';
@@ -54,6 +55,8 @@ class ProfileParser with InfraLogger {
     'keep-top-countries',
     'keep-top-pinned',
     'keep-tags',
+    // the server's ranking of its proxies, with the host and test path its checks use (profile-policy)
+    'tier-policy',
   ];
   /// The headers a subscription may send. Not `extra-security` (it would chain WARP or Psiphon, servers
   /// of third parties, behind the user's) nor `ipinfo-url` (a third party told the exit IP): a link must
@@ -68,6 +71,7 @@ class ProfileParser with InfraLogger {
     'fragment',
     'keep-top',
     ProfileProbe.headerName,
+    ProfilePolicy.headerName,
   ];
 
   /// Whether [url] is an https URL with a host: the only kind of subscription downloaded.
@@ -149,7 +153,9 @@ class ProfileParser with InfraLogger {
             (_) => TaskEither.fromEither(
               parse(
                 tempFilePath: tempFilePath,
-                profile: rp.copyWith(populatedHeaders: populatedHeaders),
+                profile: rp.copyWith(
+                  populatedHeaders: keepPolicy(previous: rp.populatedHeaders, fresh: populatedHeaders),
+                ),
               ).flatMap((profEntity) => Either.tryCatch(() => profEntity.toUpdateEntry(), ProfileFailure.unexpected)),
             ),
           ),
@@ -270,8 +276,9 @@ class ProfileParser with InfraLogger {
     Map<String, dynamic> remoteHeaders,
   ) {
     for (final entry in contentHeaders.entries) {
-      // the path check's endpoints come only from the server's HTTP answer, not from a text
-      if (entry.key == ProfileProbe.headerName) continue;
+      // the path check's endpoints and the ranking come only from the server's HTTP answer, not
+      // from a text
+      if (entry.key == ProfileProbe.headerName || entry.key == ProfilePolicy.headerName) continue;
       if (!remoteHeaders.keys.contains(entry.key)) {
         remoteHeaders[entry.key] = entry.value;
       }
@@ -287,7 +294,40 @@ class ProfileParser with InfraLogger {
       final probe = ProfileProbe.parse(headers.remove(ProfileProbe.headerName));
       if (probe != null) headers[ProfileProbe.headerName] = probe.encode();
     }
+    // the same for the ranking, with the time it came (never a server's own value of that key)
+    headers.remove(ProfilePolicy.receivedAtKey);
+    if (headers.containsKey(ProfilePolicy.headerName)) {
+      final policy = ProfilePolicy.parse(headers.remove(ProfilePolicy.headerName));
+      if (policy != null) {
+        headers[ProfilePolicy.headerName] = policy.encode();
+        headers[ProfilePolicy.receivedAtKey] = '${DateTime.now().millisecondsSinceEpoch ~/ 1000}';
+      }
+    }
     return headers;
+  }
+
+  /// The headers of an update: [fresh], and the ranking kept from [previous] when the update came
+  /// without one (a CDN on the way may drop headers) for as long as the policy's `ttl` (7 days unless
+  /// it says otherwise). The proxies always come from the update, so a proxy the server took away is
+  /// gone; a policy only orders what is there. An empty policy (`v=1`) from the server clears it at once.
+  @visibleForTesting
+  static Map<String, dynamic> keepPolicy({
+    required Map<String, dynamic>? previous,
+    required Map<String, dynamic> fresh,
+    DateTime? now,
+  }) {
+    if (fresh.containsKey(ProfilePolicy.headerName) || previous == null) return fresh;
+    final policy = ProfilePolicy.parse(previous[ProfilePolicy.headerName]);
+    final at = int.tryParse('${previous[ProfilePolicy.receivedAtKey]}');
+    if (policy == null || policy.isEmpty || at == null) return fresh;
+    final received = DateTime.fromMillisecondsSinceEpoch(at * 1000);
+    final age = (now ?? DateTime.now()).difference(received);
+    if (age.isNegative || age > policy.ttl) return fresh;
+    return {
+      ...fresh,
+      ProfilePolicy.headerName: policy.encode(),
+      ProfilePolicy.receivedAtKey: '$at',
+    };
   }
 
   static Map<String, dynamic> _parseHeadersFromContent(String content) {
@@ -523,7 +563,20 @@ class ProfileParser with InfraLogger {
     return ProfileParser.profileOverride(
       populatedHeaders: decodeProfileHeaders(profile.populatedHeaders.value),
       userOverride: decodeUserOverride(profile.userOverride.value),
+      subscriptionUrl: profile.url.present ? profile.url.value : null,
     );
+  }
+
+  /// The `tier-policy` setting of the core: the profile's ranking (`profile-policy`), the host of its
+  /// subscription's URL (never a host from the policy) and the test path of its `profile-probe`. Null
+  /// without a non-empty policy or an https subscription.
+  @visibleForTesting
+  static Map<String, dynamic>? tierPolicySetting(Map<String, dynamic>? headers, String? subscriptionUrl) {
+    final policy = ProfilePolicy.parse(headers?[ProfilePolicy.headerName]);
+    if (policy == null || policy.isEmpty || subscriptionUrl == null || !isHttpsUrl(subscriptionUrl)) return null;
+    final host = Uri.parse(subscriptionUrl.trim()).host;
+    final probe = ProfileProbe.parse(headers?[ProfileProbe.headerName]);
+    return {'policy': policy.encode(), 'probe-host': host, 'probe-path': ?probe?.getPath};
   }
 
   /// Resolve an `extra-security` value to a chain mode.
@@ -577,8 +630,11 @@ class ProfileParser with InfraLogger {
   static String profileOverride({
     required Map<String, dynamic>? populatedHeaders,
     required UserOverride? userOverride,
+    String? subscriptionUrl,
   }) {
     final headers = Map<String, dynamic>.from(populatedHeaders ?? {});
+    // the ranking goes to the core as tier-policy; the raw header stays with the profile
+    if (tierPolicySetting(populatedHeaders, subscriptionUrl) case final tiers?) headers['tier-policy'] = tiers;
 
     // Consume the raw subscription inputs; the output config uses structured
     // keys, so these string values must not leak through unchanged.
