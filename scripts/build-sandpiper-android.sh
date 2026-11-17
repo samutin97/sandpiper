@@ -32,11 +32,11 @@ SRC="${SRC:-$VPN/src/hiddify-app}"
 WORK="${WORK:-$VPN/build/hiddify-hardened}"
 CORE="${CORE:-hardened}"
 CORE_AAR="${CORE_AAR:-$VPN/build/artifacts/hiddify-core-hardened/hiddify-core.aar}"
-# the hardened core this version of the app is made for (b94874e, 5.9.8-sp.6: the choice of a proxy by
+# the hardened core this version of the app is made for (12ed837, 5.9.8-sp.6: the choice of a proxy by
 # the subscription server's ranking; a last resort never used before the user agrees, whatever the
 # path, agreements per proxy and profile, a stricter check); a newer aar is taken only with its own
 # CORE_SHA256
-CORE_PINNED_SHA256="98e99cbe943f31d47b30c706c0fee723c4b5cd12793fb013e54b9b7352fcf858"
+CORE_PINNED_SHA256="615372cc75b7a1c60507fb75098d4acd8a2c2f3427a6490bc894d61c10b86f73"
 KEYSTORE="${KEYSTORE:-$VPN/secrets/android-signing/sandpiper-release.jks}"
 KEYPASS_FILE="${KEYPASS_FILE:-$VPN/secrets/android-signing/sandpiper-release.password.txt}"
 KEYALIAS="${KEYALIAS:-sandpiper}"
