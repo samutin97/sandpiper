@@ -19,7 +19,7 @@ void main() {
   });
 
   group('PortablePreferencesStore (W4-04)', () {
-    test('keeps the portable build\'s settings in its own file', () async {
+    test("keeps the portable build's settings in its own file", () async {
       final file = File('${folder.path}/sandpiper_portable_data/shared_preferences.json');
       final store = PortablePreferencesStore(file);
       SharedPreferencesStorePlatform.instance = store;
@@ -84,7 +84,7 @@ void main() {
   });
 
   group('renewSessionProxySecret (W4-04)', () {
-    Future<SharedPreferences> preferencesWith(Map<String, Object> values) async {
+    Future<SharedPreferences> preferencesWith(Map<String, Object> values) {
       SharedPreferences.resetStatic();
       SharedPreferences.setMockInitialValues(values);
       return SharedPreferences.getInstance();

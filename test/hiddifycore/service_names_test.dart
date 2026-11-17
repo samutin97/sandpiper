@@ -48,7 +48,7 @@ void main() {
     skip: File(_goNames).existsSync() ? false : 'the core submodule is not checked out',
   );
 
-  test('the service folder is the fork\'s on Windows and Linux', () {
+  test("the service folder is the fork's on Windows and Linux", () {
     expect(
       ServiceNames.secretPath(operatingSystem: 'windows', environment: {'PROGRAMDATA': r'D:\Data'}),
       r'D:\Data\Sandpiper\AdminBgService\control.secret',

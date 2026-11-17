@@ -26,7 +26,7 @@ void main() {
     );
   });
 
-  test('the clients once set up', () async {
+  test('the clients once set up', () {
     final core = CoreInterface();
     final channel = ClientChannel('127.0.0.1', port: 1, options: const ChannelOptions(credentials: ChannelCredentials.insecure()));
     addTearDown(channel.shutdown);
