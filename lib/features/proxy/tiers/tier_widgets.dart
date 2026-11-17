@@ -52,73 +52,104 @@ String tierScoresText(Translations t, PolicyScores s) =>
       : (background: s.secondaryContainer, foreground: s.onSecondaryContainer);
 }
 
-/// "reserve" or "last resort", as a small chip; nothing for the other modes.
+/// The signs of the three scores, in a row and beside their names in a proxy's details.
+const tierReliabilityIcon = Icons.verified_outlined;
+const tierStealthIcon = Icons.visibility_off_outlined;
+const tierSecurityIcon = Icons.lock_outline_rounded;
+
+/// "reserve" or "last resort", as a small chip, or its sign alone where room is short; nothing for
+/// the other modes.
 class TierBadge extends ConsumerWidget {
-  const TierBadge(this.mode, {super.key});
+  const TierBadge(this.mode, {super.key, this.iconOnly = false});
   final TierMode mode;
+  final bool iconOnly;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (!mode.isReserve) return const SizedBox.shrink();
     final t = ref.watch(translationsProvider).requireValue;
     final colors = _reserveColors(context, mode);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(color: colors.background, borderRadius: BorderRadius.circular(6)),
-      child: Text(
-        mode == TierMode.lastResort ? t.fork.tiers.lastResortBadge : t.fork.tiers.reserveBadge,
-        maxLines: 1,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colors.foreground, height: 1.2),
+    final label = mode == TierMode.lastResort ? t.fork.tiers.lastResortBadge : t.fork.tiers.reserveBadge;
+    return Semantics(
+      label: label,
+      excludeSemantics: true,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: iconOnly ? 3 : 6, vertical: 1),
+        decoration: BoxDecoration(color: colors.background, borderRadius: BorderRadius.circular(6)),
+        child: iconOnly
+            ? Icon(
+                mode == TierMode.lastResort ? Icons.warning_amber_rounded : Icons.alt_route_rounded,
+                size: 13,
+                color: colors.foreground,
+              )
+            : Text(
+                label,
+                maxLines: 1,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(color: colors.foreground, height: 1.2),
+              ),
       ),
     );
   }
 }
 
 /// A proxy's place in the server's rating, on one line of a proxies-page row: the reserve chip, then
-/// "Reliability 5 · Stealth 4 · Security 5", or shorter words when the row is narrow.
+/// the three scores as signs and numbers (their names are in the details and for screen readers).
+/// It always fits: where the row is narrow the chip is a sign alone, and the line shrinks rather
+/// than being cut.
 class TierRatingsLine extends ConsumerWidget {
   const TierRatingsLine(this.place, {super.key});
   final PolicyPlace place;
 
-  /// Widths, without the chip, under which the line takes shorter words.
-  static const fullWidth = 250.0;
+  /// Under this width the reserve chip is its sign alone.
+  static const chipWidth = 190.0;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(translationsProvider).requireValue;
     final scores = place.node?.scores;
-    final style = Theme.of(context).textTheme.labelSmall?.copyWith(
-      color: Theme.of(context).colorScheme.onSurfaceVariant,
-      height: 1.2,
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    final style = Theme.of(context).textTheme.labelMedium?.copyWith(color: color, height: 1.1, fontWeight: FontWeight.w600);
+    final reserve = place.mode.isReserve;
+    final words = [
+      if (reserve) place.mode == TierMode.lastResort ? t.fork.tiers.lastResortBadge : t.fork.tiers.reserveBadge,
+      if (scores != null) tierScoresText(t, scores),
+    ].join(' · ');
+    Widget score(IconData icon, int value) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color),
+        const Gap(2),
+        Text('$value', style: style),
+      ],
     );
     return LayoutBuilder(
-      builder: (context, constraints) {
-        final chip = place.mode.isReserve;
-        final room = constraints.maxWidth - (chip ? 90 : 0);
-        final tr = t.fork.tiers;
-        final text = scores == null
-            ? null
-            : room >= fullWidth
-            ? tierScoresText(t, scores)
-            : '${tr.reliabilityShort} ${scores.reliability} · ${tr.stealthShort} ${scores.stealth} · '
-                  '${tr.securityShort} ${scores.security}';
-        return Row(
-          children: [
-            if (chip) ...[TierBadge(place.mode), const Gap(6)],
-            if (text != null)
-              Flexible(
-                child: Tooltip(
-                  message: tierScoresText(t, scores!),
-                  child: Semantics(
-                    label: tierScoresText(t, scores),
-                    excludeSemantics: true,
-                    child: Text(text, maxLines: 1, overflow: TextOverflow.fade, softWrap: false, style: style),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
+      builder: (context, constraints) => Semantics(
+        label: words,
+        excludeSemantics: true,
+        child: Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: AlignmentDirectional.centerStart,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (reserve) ...[
+                  TierBadge(place.mode, iconOnly: constraints.maxWidth < chipWidth),
+                  const Gap(8),
+                ],
+                if (scores != null) ...[
+                  score(tierReliabilityIcon, scores.reliability),
+                  const Gap(10),
+                  score(tierStealthIcon, scores.stealth),
+                  const Gap(10),
+                  score(tierSecurityIcon, scores.security),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -173,11 +204,13 @@ class TierDetails extends ConsumerWidget {
     final tr = t.fork.tiers;
     final scores = place.node?.scores;
     final captions = [for (final key in place.node?.captions ?? const <String>[]) ?tierCaption(t, key)];
-    Widget bar(String label, int value) => Padding(
+    Widget bar(IconData icon, String label, int value) => Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(
         children: [
-          SizedBox(width: 110, child: Text(label, style: theme.textTheme.bodyMedium)),
+          Icon(icon, size: 16, color: theme.colorScheme.onSurfaceVariant),
+          const Gap(6),
+          SizedBox(width: 104, child: Text(label, style: theme.textTheme.bodyMedium)),
           Expanded(
             child: ClipRRect(
               borderRadius: BorderRadius.circular(4),
@@ -209,9 +242,9 @@ class TierDetails extends ConsumerWidget {
             TierMode.manual => tr.place.manual,
           }, style: theme.textTheme.bodySmall),
           if (scores != null) ...[
-            bar(tr.reliability, scores.reliability),
-            bar(tr.stealth, scores.stealth),
-            bar(tr.security, scores.security),
+            bar(tierReliabilityIcon, tr.reliability, scores.reliability),
+            bar(tierStealthIcon, tr.stealth, scores.stealth),
+            bar(tierSecurityIcon, tr.security, scores.security),
           ],
           for (final caption in captions)
             Padding(

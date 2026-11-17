@@ -1474,6 +1474,7 @@
     },
     "tiers": {
       "groupName": "By server rating",
+      "groupShort": "Rating",
       "switchTitle": "Choose by the server's rating",
       "switchSubtitle": "The app uses the most reliable and best hidden option that works in this network, and moves to a reserve only when it has to",
       "recommended": "Recommended",
@@ -1513,7 +1514,7 @@
         "reserveTitle": "Reserve option in use: ${name}",
         "lastResortTitle": "Last resort in use: ${name}",
         "nodeFailed": "The main options do not get through in this network.",
-        "tcpBlocked": "TCP connections to the server freeze in this network, so an option over UDP is used.",
+        "tcpBlocked": "TCP connections to the server do not get through in this network (they freeze or are reset), so an option over UDP is used.",
         "slow": "The main options are slow in this network.",
         "backUp": "The app goes back to the main options by itself once they work again.",
         "lastResortHint": "Use it briefly and avoid large downloads.",

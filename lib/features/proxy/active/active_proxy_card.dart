@@ -371,7 +371,7 @@ class _ProxyRow extends ConsumerWidget {
                   ),
                   const Gap(2),
                   Text(
-                    group == tieredGroupTag ? t.fork.tiers.groupName : group,
+                    group == tieredGroupTag ? t.fork.tiers.groupShort : group,
                     style: theme.textTheme.labelMedium?.copyWith(color: s.primary, letterSpacing: .3),
                   ),
                   Text('  ·  ', style: theme.textTheme.labelMedium?.copyWith(color: s.outline)),

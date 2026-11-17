@@ -221,10 +221,10 @@ class ProfilePolicy {
     }
     final places = <String, PolicyPlace>{};
     for (var i = 0; i < tiers.length; i++) {
-      for (final ref in tiers[i].refs) {
+      for (final (order, ref) in tiers[i].refs.indexed) {
         final tag = ref.resolve(list);
         if (tag == null || places.containsKey(tag)) continue;
-        places[tag] = PolicyPlace(tier: i, mode: tiers[i].mode, node: scores[tag]);
+        places[tag] = PolicyPlace(tier: i, mode: tiers[i].mode, node: scores[tag], order: order);
       }
     }
     // scored proxies outside every tier: manual, with their scores
@@ -374,8 +374,23 @@ class PolicyTier {
 /// Where the policy puts one proxy: its tier and mode, and its scores when the policy gives them.
 @immutable
 class PolicyPlace {
-  const PolicyPlace({required this.tier, required this.mode, this.node});
+  const PolicyPlace({required this.tier, required this.mode, this.node, this.order = 0});
   final int tier;
   final TierMode mode;
   final PolicyNode? node;
+
+  /// Its place in its tier as the policy lists it.
+  final int order;
+
+  /// The order the core tries proxies in (hiddify-core `Bind`): by tier, then the scored ones, the
+  /// higher sum first, then as the policy lists them.
+  static int compare(PolicyPlace a, PolicyPlace b) {
+    if (a.tier != b.tier) return a.tier.compareTo(b.tier);
+    if ((a.node == null) != (b.node == null)) return a.node == null ? 1 : -1;
+    int sum(PolicyScores? s) => s == null ? 0 : s.reliability + s.stealth + s.security;
+    final sumA = sum(a.node?.scores);
+    final sumB = sum(b.node?.scores);
+    if (sumA != sumB) return sumB.compareTo(sumA);
+    return a.order.compareTo(b.order);
+  }
 }

@@ -102,13 +102,17 @@ final activePolicyProvider = Provider<ProfilePolicy?>(
   (ref) => ref.watch(activeProfileProvider.select((profile) => profile.valueOrNull?.policy)),
 );
 
-/// The sections of the proxies page with a policy: the groups first, then the proxies of each mode, in
-/// the order they come (the user's sort), and the proxies the policy does not name last.
+/// The sections of the proxies page with a policy: the groups first, then the proxies of each mode in
+/// the server's order (the order the core tries them), and the proxies the policy does not name last,
+/// in the user's sort.
 List<({TierMode? mode, List<OutboundInfo> items})> tierSections(List<OutboundInfo> items, Map<String, PolicyPlace> places) {
   final groups = items.where((e) => e.isGroup).toList();
   final byMode = <TierMode, List<OutboundInfo>>{for (final m in TierMode.values) m: []};
   for (final item in items.where((e) => !e.isGroup)) {
     byMode[places[item.tag]?.mode ?? TierMode.manual]!.add(item);
+  }
+  for (final mode in [TierMode.auto, TierMode.fallback, TierMode.lastResort]) {
+    byMode[mode]!.sort((a, b) => PolicyPlace.compare(places[a.tag]!, places[b.tag]!));
   }
   return [
     if (groups.isNotEmpty) (mode: null, items: groups),

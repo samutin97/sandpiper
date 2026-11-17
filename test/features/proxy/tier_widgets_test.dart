@@ -8,8 +8,10 @@ import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/model/profile_policy.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
+import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
 import 'package:hiddify/features/proxy/tiers/tier_status.dart';
 import 'package:hiddify/features/proxy/tiers/tier_widgets.dart';
+import 'package:hiddify/features/proxy/widget/proxy_tile.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -39,6 +41,11 @@ class _Main extends MainOutboundsNotifier {
   final OutboundGroupList list;
   @override
   Stream<OutboundGroupList> build() => Stream.value(list);
+}
+
+class _Style extends ProxyPingStyleNotifier {
+  @override
+  ProxyPingStyle build() => ProxyPingStyle.number;
 }
 
 class _Toasts extends InAppNotificationController {
@@ -83,6 +90,7 @@ Future<(Translations, _Toasts)> _pump(
       activeProfileProvider.overrideWith(() => _Profile(headers)),
       mainOutboundsNotifierProvider.overrideWith(() => _Main(main ?? OutboundGroupList())),
       inAppNotificationControllerProvider.overrideWithValue(toasts),
+      proxyPingStyleNotifierProvider.overrideWith(_Style.new),
     ],
   );
   addTearDown(container.dispose);
@@ -107,28 +115,75 @@ void main() {
   final policy = ProfilePolicy.parse(_policy)!;
   final places = policy.bind(['2 Bravo gRPC', '3 Charlie XHTTP', '9 India HTTP3', '10 Juliet WG', '5 Echo Naive']);
 
-  testWidgets('a row shows the three scores in words, shorter on a narrow row', (tester) async {
+  testWidgets('a row shows the three scores as signs and numbers, their names for screen readers', (tester) async {
+    final semantics = tester.ensureSemantics();
     final (t, _) = await _pump(tester, TierRatingsLine(places['2 Bravo gRPC']!));
-    expect(find.text('Надёжность 5 · Маскировка 4 · Безопасность 5'), findsOneWidget);
-    await _pump(tester, TierRatingsLine(places['2 Bravo gRPC']!), width: 200);
-    expect(find.text('Надёжн. 5 · Маскир. 4 · Безоп. 5'), findsOneWidget);
+    expect(find.bySemanticsLabel('Надёжность 5 · Маскировка 4 · Безопасность 5'), findsOneWidget);
+    expect(find.byIcon(tierReliabilityIcon), findsOneWidget);
+    expect(find.byIcon(tierStealthIcon), findsOneWidget);
+    expect(find.byIcon(tierSecurityIcon), findsOneWidget);
+    expect(find.text('5'), findsNWidgets(2));
+    expect(find.text('4'), findsOneWidget);
     expect(t.fork.tiers.reliability, 'Надёжность');
+    semantics.dispose();
   });
 
-  testWidgets('a reserve wears its chip, the last resort its own', (tester) async {
-    final (t, _) = await _pump(tester, TierRatingsLine(places['9 India HTTP3']!), width: 600);
+  testWidgets('a reserve wears its chip, the sign alone where the row is narrow', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final (t, _) = await _pump(tester, TierRatingsLine(places['9 India HTTP3']!), width: 300);
     expect(find.text(t.fork.tiers.reserveBadge), findsOneWidget);
-    expect(find.text('Надёжность 3 · Маскировка 3 · Безопасность 5'), findsOneWidget);
-    await _pump(tester, TierRatingsLine(places['10 Juliet WG']!), width: 600);
+    expect(find.bySemanticsLabel('резерв · Надёжность 3 · Маскировка 3 · Безопасность 5'), findsOneWidget);
+    await _pump(tester, TierRatingsLine(places['10 Juliet WG']!), width: 300);
     expect(find.text(t.fork.tiers.lastResortBadge), findsOneWidget);
+    await _pump(tester, TierRatingsLine(places['10 Juliet WG']!), width: 120);
+    expect(find.text(t.fork.tiers.lastResortBadge), findsNothing);
+    expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('^последний резерв · ')), findsOneWidget);
     // a recommended proxy has no chip
-    await _pump(tester, TierRatingsLine(places['2 Bravo gRPC']!), width: 600);
+    await _pump(tester, TierRatingsLine(places['2 Bravo gRPC']!), width: 300);
     expect(find.text(t.fork.tiers.reserveBadge), findsNothing);
+    semantics.dispose();
   });
+
+  // SP5-01: a whole proxies-page row, from 270 to 412 dp, ru and en, with and without a chip: no
+  // overflow, and the three scores always there
+  for (final locale in [AppLocale.ru, AppLocale.en]) {
+    for (final width in [270.0, 320.0, 360.0, 412.0]) {
+      testWidgets('a row of ${width.toInt()} dp in ${locale.languageCode} fits', (tester) async {
+        for (final tag in ['2 Bravo gRPC', '9 India HTTP3', '10 Juliet WG']) {
+          await _pump(
+            tester,
+            SizedBox(
+              height: 90,
+              child: ProxyTile(
+                OutboundInfo(tag: tag, tagDisplay: tag, type: 'VLESS', urlTestDelay: 120),
+                place: places[tag],
+                selected: false,
+                onTap: () {},
+              ),
+            ),
+            locale: locale,
+            width: width,
+            headers: {'profile-policy': _policy},
+          );
+          expect(tester.takeException(), isNull, reason: '$tag at $width');
+          expect(find.byIcon(tierSecurityIcon), findsOneWidget, reason: '$tag at $width');
+          final line = tester.getRect(find.byType(TierRatingsLine));
+          final row = tester.getRect(find.byType(ProxyTile));
+          expect(line.right, lessThanOrEqualTo(row.right), reason: '$tag at $width');
+        }
+        // the row's animations end with it
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 5));
+      });
+    }
+  }
 
   testWidgets('English too', (tester) async {
+    final semantics = tester.ensureSemantics();
     await _pump(tester, TierRatingsLine(places['2 Bravo gRPC']!), locale: AppLocale.en);
-    expect(find.text('Reliability 5 · Stealth 4 · Security 5'), findsOneWidget);
+    expect(find.bySemanticsLabel('Reliability 5 · Stealth 4 · Security 5'), findsOneWidget);
+    semantics.dispose();
   });
 
   testWidgets('section titles over the reserves', (tester) async {
@@ -228,5 +283,12 @@ void main() {
     expect(sections.map((s) => s.mode), [null, TierMode.auto, TierMode.fallback, TierMode.lastResort, TierMode.manual]);
     expect(sections[1].items.single.tag, '2 Bravo gRPC');
     expect(sections.last.items.single.tag, '5 Echo Naive');
+    // SP5-06: in a section, the server's order (tier, the scored first, the higher sum, the policy's
+    // order), not the user's sort by ping
+    final rated = ProfilePolicy.parse('v=1;n=2:555;n=3:555;n=1:444;n=4:444;t=auto:3,2;t=auto:4,1;t=fallback:7,5,6')!;
+    final tags = ['4 d', '1 a', '2 b', '6 f', '3 c', '5 e', '7 g'];
+    final ordered = tierSections([for (final tag in tags) OutboundInfo(tag: tag)], rated.bind(tags));
+    expect(ordered[0].items.map((e) => e.tag), ['3 c', '2 b', '4 d', '1 a']);
+    expect(ordered[1].items.map((e) => e.tag), ['7 g', '5 e', '6 f']);
   });
 }
