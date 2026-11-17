@@ -120,6 +120,15 @@ class InboundOptionsPage extends HookConsumerWidget with AppLogger {
               onChanged: ref.read(ConfigOptions.localProxyAuth.notifier).update,
             ),
           if (localAuth || PlatformUtils.isMobile) const _ProxySecretTile(),
+          // W4-04: on the desktop a new password at every launch, unless kept
+          if (localAuth && PlatformUtils.isDesktop)
+            SwitchListTile.adaptive(
+              title: Text(t.fork.localProxy.keepSecret),
+              subtitle: Text(t.fork.localProxy.keepSecretMsg),
+              secondary: const Icon(Icons.lock_clock_rounded),
+              value: ref.watch(ConfigOptions.persistentProxySecret),
+              onChanged: ref.read(ConfigOptions.persistentProxySecret.notifier).update,
+            ),
           _GroupHeader(text.lanGroup),
           const LanSharingPreferenceWidget(),
           ValuePreferenceWidget(

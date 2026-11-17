@@ -19,6 +19,7 @@ import 'package:hiddify/core/model/environment.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/preferences/preferences_migration.dart';
 import 'package:hiddify/core/preferences/preferences_provider.dart';
+import 'package:hiddify/core/preferences/session_proxy_secret.dart';
 import 'package:hiddify/core/widget/native_splash.dart';
 import 'package:hiddify/features/app/widget/app.dart';
 import 'package:hiddify/features/auto_start/notifier/auto_start_notifier.dart';
@@ -77,6 +78,14 @@ Future<void> lazyBootstrap(WidgetsBinding widgetsBinding, Environment env) async
       await container.read(sharedPreferencesProvider).requireValue.clear();
     }
   });
+  // W4-04: the desktop's local proxy password, new at every launch unless the user keeps one
+  await _init(
+    "proxy secret",
+    () => renewSessionProxySecret(
+      container.read(sharedPreferencesProvider).requireValue,
+      desktop: PlatformUtils.isDesktop,
+    ),
+  );
 
   // A dev build (a .dev tag or the draft release) is a beta: it joins the beta channel, so that
   // it updates to the next beta rather than waiting for a stable release. A store build has no

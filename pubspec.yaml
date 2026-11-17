@@ -38,6 +38,8 @@ dependencies:
   drift: ^2.21.0
   drift_flutter: ^0.2.1
   shared_preferences: ^2.5.2
+  # the portable Windows build's own settings store (lib/core/preferences/portable_preferences_store.dart)
+  shared_preferences_platform_interface: ^2.4.1
   # shared_preferences_android: ^2.4.8
   dio: ^5.4.1
   crypto: ^3.0.6

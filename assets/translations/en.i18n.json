@@ -1404,7 +1404,9 @@
       "systemProxyTitle": "The system proxy has no password",
       "systemProxyMsg": "In system proxy mode every app that follows the computer's proxy setting goes through the VPN, Russian apps included, and any program can read that setting: through the proxy, which can not ask for a password, it learns the server's address. Prefer VPN mode, where Russian sites go directly, or proxy mode with the password given to the browser.",
       "lanTitle": "Share the connection with the local network?",
-      "lanMsg": "Devices of the local network (Wi-Fi) get a proxy port that asks for the password. Anyone given the password can learn the server's address. Turn it on only while you need it."
+      "lanMsg": "Devices of the local network (Wi-Fi) get a proxy port that asks for the password. Anyone given the password can learn the server's address. Turn it on only while you need it.",
+      "keepSecret": "Keep the password",
+      "keepSecretMsg": "Off: a new password at every launch of the app; a program that uses this proxy is given the new one. On: the password stays until you change it (a password typed by hand is kept)."
     },
     "ruleSetSource": {
       "title": "Source of the region lists",

@@ -6,6 +6,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/model/optional_range.dart';
 import 'package:hiddify/core/model/region.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
+import 'package:hiddify/core/preferences/session_proxy_secret.dart';
 import 'package:hiddify/core/utils/exception_handler.dart';
 import 'package:hiddify/core/utils/json_converters.dart';
 import 'package:hiddify/core/utils/preferences_utils.dart';
@@ -250,6 +251,10 @@ abstract class ConfigOptions {
   static final allowConnectionFromLan = PreferencesNotifier.create<bool, bool>("allow-connection-from-lan", false);
 
   static final lanSharingPassword = PreferencesNotifier.create<String, String>("lan_sharing_password", "");
+
+  /// W4-04: keep the local proxy's password from one launch to the next on the desktop (else a new
+  /// one at every launch, see renewSessionProxySecret). App-only: not sent to the core.
+  static final persistentProxySecret = PreferencesNotifier.create<bool, bool>(persistentProxySecretKey, false);
 
   /// The port the local network uses while the VPN is shared, apart from this device's own (the
   /// mixed port), always asking for the secret.

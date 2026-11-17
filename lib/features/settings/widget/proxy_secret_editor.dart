@@ -26,4 +26,6 @@ Future<void> editProxySecret(WidgetRef ref) async {
     return;
   }
   await ref.read(ConfigOptions.lanSharingPassword.notifier).update(input);
+  // a password the user typed is theirs to keep: not replaced at the next launch (W4-04)
+  if (!generate && input.isNotEmpty) await ref.read(ConfigOptions.persistentProxySecret.notifier).update(true);
 }
