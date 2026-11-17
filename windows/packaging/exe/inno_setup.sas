@@ -82,9 +82,9 @@ SignedUninstaller=yes
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: {% if CREATE_DESKTOP_ICON != true %}unchecked{% else %}checkedonce{% endif %}
 Name: "launchAtStartup"; Description: "{cm:AutoStartProgram,{{DISPLAY_NAME}}}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: {% if LAUNCH_AT_STARTUP != true %}unchecked{% else %}checkedonce{% endif %}
 [InstallDelete]
-; Before 5.9.1 the core ran from core\Hiddify.exe; it is HiddifyCoreEngine.exe beside the app now.
+; Before 5.9.1 the core ran from core\Hiddify.exe; it is SandpiperCoreEngine.exe beside the app now.
 Type: filesandordirs; Name: "{app}\core"
-; The console launcher was HiddifyCli.exe before HiddifyCore.exe (a core that still ships it puts it back).
+; The console launcher was HiddifyCli.exe before SandpiperCore.exe (a core that still ships it puts it back).
 Type: files; Name: "{app}\HiddifyCli.exe"
 
 [Files]
@@ -101,7 +101,7 @@ Name: "{userstartup}\{{DISPLAY_NAME}}"; Filename: "{app}\{{EXECUTABLE_NAME}}"; P
 ; A "Run as administrator" compatibility layer left on the app's path by an older install (or set
 ; by hand) makes CreateProcess refuse the app with error 740, so the launch at the end of Setup
 ; failed with "The requested operation requires elevation". The app must not run elevated anyway:
-; it installs its service through HiddifyAdmin.exe, and an elevated app sets the system proxy and
+; it installs its service through SandpiperAdmin.exe, and an elevated app sets the system proxy and
 ; the autostart for the wrong user. Drop the layer for both hives.
 Root: HKCU; Subkey: "Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"; ValueName: "{app}\{{EXECUTABLE_NAME}}"; ValueType: none; Flags: deletevalue dontcreatekey noerror
 Root: HKLM; Subkey: "Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"; ValueName: "{app}\{{EXECUTABLE_NAME}}"; ValueType: none; Flags: deletevalue dontcreatekey noerror
@@ -141,9 +141,9 @@ const
   SERVICE_CONTROL_STOP = $0001;
   SERVICE_STOPPED = $0001;
   DELETE_ACCESS = $10000;
-  // The elevated service hiddify-core installs (HiddifyAdminBG, the same name in every build of
-  // Hiddify and of this fork) runs the HiddifyAdmin.exe it was installed from.
-  ADMIN_SERVICE = 'HiddifyAdminBG';
+  // The elevated service this app's core installs: its own name (upstream Hiddify's is
+  // HiddifyAdminBG, never touched here), running the SandpiperAdmin.exe it was installed from.
+  ADMIN_SERVICE = 'SandpiperAdminBG';
 
 function OpenSCManager(lpMachineName, lpDatabaseName: string; dwDesiredAccess: DWORD): THandle;
   external 'OpenSCManagerW@advapi32.dll stdcall';

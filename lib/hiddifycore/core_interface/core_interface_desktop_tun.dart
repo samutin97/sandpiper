@@ -21,7 +21,7 @@ import 'package:path/path.dart' as p;
 import 'package:rxdart/rxdart.dart';
 
 /// Windows and Linux: full core usually runs in elevated admin_bgservice
-/// (`HiddifyAdminBG`). Flutter never elevates; [NeedAdminBgService] /
+/// (`SandpiperAdminBG` on Windows and Linux). Flutter never elevates; [NeedAdminBgService] /
 /// [EnsureAdminBgService] live in hiddify-core.
 class CoreInterfaceDesktopTun extends CoreInterfaceDesktop {
   CoreInterfaceDesktopTun() : super(port: 17078) {
@@ -34,7 +34,8 @@ class CoreInterfaceDesktopTun extends CoreInterfaceDesktop {
     });
   }
 
-  static const _servicePort = 18020;
+  // the fork's own (upstream Hiddify's service listens on 18020): the core's adminBgServicePort
+  static const _servicePort = 18420;
   final _status = BehaviorSubject<CoreStatus>.seeded(const CoreStatus.stopped());
   final _clientChanges = StreamController<void>.broadcast();
   ClientChannel? _serviceChannel;
@@ -80,8 +81,8 @@ class CoreInterfaceDesktopTun extends CoreInterfaceDesktop {
   String get _cliPath {
     final dir = p.dirname(Platform.resolvedExecutable);
     if (!Platform.isWindows) return p.join(dir, 'HiddifyCli');
-    // Windows' console launcher is HiddifyCore.exe; cores before it shipped HiddifyCli.exe.
-    final cli = p.join(dir, 'HiddifyCore.exe');
+    // Windows' console launcher is SandpiperCore.exe (the fork's name; HiddifyCli.exe in old cores).
+    final cli = p.join(dir, 'SandpiperCore.exe');
     if (File(cli).existsSync()) return cli;
     return p.join(dir, 'HiddifyCli.exe');
   }

@@ -6,7 +6,8 @@ import Foundation
 // with administrator rights. This controller mirrors MacOSVPNController's method-channel contract
 // (initialize/start/stop returning available, port, secret, status) so Dart can reuse the useTunnel path.
 final class TunnelServiceController {
-    private static let servicePort: UInt16 = 18020
+    // the fork's own port (upstream Hiddify's service listens on 18020): the core's adminBgServicePort
+    private static let servicePort: UInt16 = 18420
     // Must match hiddify-core adminbgservice.controlDataDir() on darwin.
     private static let secretPath =
         "/Library/Application Support/Hiddify/AdminBgService/data/control.secret"

@@ -94,7 +94,7 @@ BEGIN
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "sandpiper" "\0"
             VALUE "LegalCopyright", "Sandpiper contributors, GPL-3.0" "\0"
-            VALUE "OriginalFilename", "Hiddify.exe" "\0"
+            VALUE "OriginalFilename", "Sandpiper.exe" "\0"
             VALUE "ProductName", "sandpiper" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END

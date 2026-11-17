@@ -139,8 +139,8 @@ jobs:
         with:
           platform: x64
 
-      # hiddify-core.dll, libcronet.dll and the launchers HiddifyCore.exe, HiddifyAdmin.exe,
-      # HiddifyCoreEngine.exe (cross-compiled, as hiddify-core's own CI does)
+      # hiddify-core.dll, libcronet.dll and the launchers SandpiperCore.exe, SandpiperAdmin.exe,
+      # SandpiperCoreEngine.exe (cross-compiled, as hiddify-core's own CI does; the core's Makefile names them)
       - name: Build the Windows core
         working-directory: hiddify-core
         env:
@@ -154,7 +154,7 @@ jobs:
         working-directory: hiddify-core/bin
         run: |
           set -euo pipefail
-          tar -czf hiddify-lib-windows-amd64.tar.gz hiddify-core.dll libcronet.dll HiddifyCore.exe HiddifyAdmin.exe HiddifyCoreEngine.exe
+          tar -czf hiddify-lib-windows-amd64.tar.gz hiddify-core.dll libcronet.dll SandpiperCore.exe SandpiperAdmin.exe SandpiperCoreEngine.exe
           tar -tzf hiddify-lib-windows-amd64.tar.gz
           sha256sum hiddify-lib-windows-amd64.tar.gz
 

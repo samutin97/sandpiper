@@ -5,6 +5,9 @@ publisher_name: Sandpiper
 # No publisher_url: Settings > Apps shows it to every program (the uninstall key), and the credit to
 # Hiddify is in the README and the About page.
 display_name: Sandpiper
+# The app's executable (windows/CMakeLists.txt BINARY_NAME). Without it the packager takes the first
+# .exe of the folder, which the core's launchers beside it could be.
+executable_name: Sandpiper.exe
 create_desktop_icon: true
 install_dir_name: "{autopf64}\\Sandpiper"
 # B-02: Program Files only. A per-user install ({localappdata}\Programs, writable by every program of

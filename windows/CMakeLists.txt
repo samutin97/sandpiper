@@ -4,7 +4,7 @@ project(hiddify LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "Hiddify")
+set(BINARY_NAME "Sandpiper")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -91,20 +91,21 @@ COMPONENT Runtime RENAME hiddify-core.dll)
 install(FILES "../hiddify-core/bin/libcronet.dll" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
 COMPONENT Runtime RENAME libcronet.dll)
 
-# The console launcher (hiddify-core's command line): HiddifyCore.exe, HiddifyCli.exe in cores before
-# it. Each is installed under its own name, because the core's DLL looks for it by that name.
-install(FILES "../hiddify-core/bin/HiddifyCore.exe" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+# The console launcher (hiddify-core's command line): SandpiperCore.exe (the fork's name, never an
+# installed Hiddify's HiddifyCore.exe), HiddifyCli.exe in cores before it. Each is installed under its
+# own name, because the core's DLL looks for it by that name.
+install(FILES "../hiddify-core/bin/SandpiperCore.exe" DESTINATION "${CMAKE_INSTALL_PREFIX}"
 COMPONENT Runtime OPTIONAL)
 install(FILES "../hiddify-core/bin/HiddifyCli.exe" DESTINATION "${CMAKE_INSTALL_PREFIX}"
 COMPONENT Runtime OPTIONAL)
 
 # Elevation helper (requireAdministrator manifest) used to install the VPN service.
-install(FILES "../hiddify-core/bin/HiddifyAdmin.exe" DESTINATION "${CMAKE_INSTALL_PREFIX}"
-COMPONENT Runtime RENAME HiddifyAdmin.exe)
+install(FILES "../hiddify-core/bin/SandpiperAdmin.exe" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+COMPONENT Runtime RENAME SandpiperAdmin.exe)
 
-# A proxy-mode connection runs in a process of its own: HiddifyCoreEngine.exe, shown as Hiddify Core Engine.
+# A proxy-mode connection runs in a process of its own: SandpiperCoreEngine.exe, shown as Sandpiper Core Engine.
 # Optional: without it (a core built before it existed) the app runs it in its own process.
-install(FILES "../hiddify-core/bin/HiddifyCoreEngine.exe" DESTINATION "${CMAKE_INSTALL_PREFIX}"
+install(FILES "../hiddify-core/bin/SandpiperCoreEngine.exe" DESTINATION "${CMAKE_INSTALL_PREFIX}"
 COMPONENT Runtime OPTIONAL)
 
 

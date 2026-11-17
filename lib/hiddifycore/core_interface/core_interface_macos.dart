@@ -173,7 +173,7 @@ class CoreInterfaceMacOS extends CoreInterfaceDesktop {
     }
   }
 
-  /// Reuses the gRPC channel when port/secret are unchanged (avoids leaking TCP to :18020).
+  /// Reuses the gRPC channel when port/secret are unchanged (avoids leaking TCP to :18420).
   void _attachExtensionClient(int controlPort, String secret) {
     final sameEndpoint = _extensionPort == controlPort && _extensionSecret == secret;
     if (sameEndpoint && _extensionChannel != null) {
@@ -355,7 +355,7 @@ class CoreInterfaceMacOS extends CoreInterfaceDesktop {
     }
   }
 
-  /// Stops the root engine via AdminBg.Stop (Core.Stop is intentionally denied on :18020).
+  /// Stops the root engine via AdminBg.Stop (Core.Stop is intentionally denied on :18420).
   /// Returns true when the RPC completed without error.
   Future<bool> _stopAdminBgEngine() async {
     final client = _adminBgClientOrNull();

@@ -8,8 +8,8 @@ void main() {
 
   test('a path with a space is quoted, the link passed as one argument', () {
     expect(
-      handler.command(r'C:\Program Files\Sandpiper\Hiddify.exe', null),
-      r'"C:\Program Files\Sandpiper\Hiddify.exe" "%1"',
+      handler.command(r'C:\Program Files\Sandpiper\Sandpiper.exe', null),
+      r'"C:\Program Files\Sandpiper\Sandpiper.exe" "%1"',
     );
   });
 

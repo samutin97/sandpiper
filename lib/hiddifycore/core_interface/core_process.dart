@@ -21,7 +21,7 @@ class CoreProcessException implements Exception {
 /// The desktop core in a process of its own, instead of the library loaded into the UI process.
 ///
 /// It runs `<launcher> core …` (hiddify-core cmd/cmd_core.go):
-/// - Windows: `HiddifyCoreEngine.exe`, shown as Hiddify Core Engine with the core icon
+/// - Windows: `SandpiperCoreEngine.exe`, shown as Sandpiper Core Engine with the core icon
 /// - macOS: `Contents/Helpers/Hiddify Core.app`, named Hiddify with the core icon; not an app to
 ///   macOS, so App Nap does not throttle it while the UI is in the background (hiddify-app#2343)
 /// - Linux: `HiddifyCli`, which renames itself `hiddify-core` for htop and top
@@ -68,7 +68,7 @@ class CoreProcess {
     final directory = p.dirname(Platform.resolvedExecutable);
     final String path;
     if (Platform.isWindows) {
-      path = p.join(directory, 'HiddifyCoreEngine.exe');
+      path = p.join(directory, 'SandpiperCoreEngine.exe');
     } else if (Platform.isMacOS) {
       path = p.normalize(p.join(directory, '..', 'Helpers', 'Hiddify Core.app', 'Contents', 'MacOS', 'Hiddify'));
     } else if (Platform.isLinux) {
