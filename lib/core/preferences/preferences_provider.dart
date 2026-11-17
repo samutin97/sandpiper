@@ -53,9 +53,13 @@ Future<PortablePreferencesStore?> _usePortableStore(Logger logger) async {
   if (!await AppDirectories.checkDirectoryAccess(directory)) return null;
   final store = PortablePreferencesStore(File(p.join(directory.path, portablePreferencesFile)));
   try {
-    final roaming = File(p.join((await getApplicationSupportDirectory()).path, 'shared_preferences.json'));
-    final moved = await store.moveFrom(roaming, 'portable.');
-    if (moved > 0) logger.info("moved $moved portable settings out of the Roaming profile");
+    // W5-02: not getApplicationSupportDirectory, which makes the Roaming folder it names
+    final roaming = roamingPreferencesFile(Platform.environment);
+    if (roaming != null) {
+      final moved = await store.moveFrom(roaming, 'portable.');
+      if (moved > 0) logger.info("moved $moved portable settings out of the Roaming profile");
+      await removeEmptyRoamingFolders(roaming);
+    }
   } catch (e) {
     logger.warning("could not move the portable settings out of the Roaming profile", e);
   }

@@ -112,4 +112,36 @@ void main() {
       }
     });
   });
+
+  group('Roaming folder of the portable build (W5-02)', () {
+    test('is found from APPDATA without making a folder', () {
+      final appData = '${folder.path}${Platform.pathSeparator}Roaming';
+      final file = roamingPreferencesFile({'APPDATA': appData})!;
+      expect(file.path, endsWith(['Sandpiper', 'sandpiper', 'shared_preferences.json'].join(Platform.pathSeparator)));
+      expect(file.path, startsWith(appData));
+      expect(Directory(appData).existsSync(), isFalse, reason: 'nothing is created');
+      expect(roamingPreferencesFile({}), isNull);
+      expect(roamingPreferencesFile({'APPDATA': ''}), isNull);
+    });
+
+    test('names the folder as the version resource of the exe does (path_provider)', () {
+      final rc = File('windows/runner/Runner.rc').readAsStringSync();
+      expect(rc, contains('VALUE "CompanyName", "${windowsRoamingFolder[0]}"'));
+      expect(rc, contains('VALUE "ProductName", "${windowsRoamingFolder[1]}"'));
+    });
+
+    test('empty folders left by an earlier build go, a used one stays', () async {
+      final appData = '${folder.path}${Platform.pathSeparator}Roaming';
+      final file = roamingPreferencesFile({'APPDATA': appData})!;
+      await file.parent.create(recursive: true);
+      await removeEmptyRoamingFolders(file);
+      expect(Directory('$appData${Platform.pathSeparator}Sandpiper').existsSync(), isFalse);
+      expect(Directory(appData).existsSync(), isTrue, reason: 'APPDATA itself is not touched');
+
+      await file.parent.create(recursive: true);
+      await file.writeAsString('{"flutter.x":1}');
+      await removeEmptyRoamingFolders(file);
+      expect(file.existsSync(), isTrue);
+    });
+  });
 }

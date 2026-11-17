@@ -1,8 +1,39 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
 import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 import 'package:shared_preferences_platform_interface/types.dart';
+
+/// The folder of the app in the Roaming profile on Windows, as path_provider names it from the exe's
+/// version resource: CompanyName, then ProductName (`windows/runner/Runner.rc`). shared_preferences
+/// of an installed build keeps its settings there.
+const windowsRoamingFolder = ['Sandpiper', 'sandpiper'];
+
+/// W5-02: the shared_preferences.json an earlier portable build may have left in the Roaming profile,
+/// found without making any folder: path_provider's getApplicationSupportDirectory creates the folder
+/// on every call, and the portable build left an empty `%APPDATA%\Sandpiper\sandpiper` at every
+/// launch. Null without APPDATA.
+File? roamingPreferencesFile(Map<String, String> environment) {
+  final appData = environment['APPDATA'];
+  if (appData == null || appData.isEmpty) return null;
+  return File(p.joinAll([appData, ...windowsRoamingFolder, 'shared_preferences.json']));
+}
+
+/// W5-02: removes the app's Roaming folders [roaming] sits in when they are empty (left by earlier
+/// portable builds); a folder with anything in it, an installed build's, stays.
+Future<void> removeEmptyRoamingFolders(File roaming) async {
+  var folder = roaming.parent;
+  for (var i = 0; i < windowsRoamingFolder.length; i++) {
+    try {
+      if (!folder.existsSync() || folder.listSync().isNotEmpty) return;
+      await folder.delete();
+    } on FileSystemException {
+      return;
+    }
+    folder = folder.parent;
+  }
+}
 
 /// The settings of the portable Windows build, in a file beside its data (`sandpiper_portable_data`).
 ///
