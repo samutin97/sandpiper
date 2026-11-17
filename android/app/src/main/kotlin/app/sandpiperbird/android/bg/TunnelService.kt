@@ -5,6 +5,7 @@ import app.sandpiperbird.android.Application
 import app.sandpiperbird.android.CoreCaps
 import app.sandpiperbird.android.R
 import app.sandpiperbird.android.Settings
+import app.sandpiperbird.android.constant.Action
 import android.content.Intent
 import android.content.pm.PackageManager.NameNotFoundException
 import android.net.ProxyInfo
@@ -46,6 +47,8 @@ class TunnelService : VpnService(), PlatformInterfaceWrapper {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // A start without the app: the service starts the core with the last profile by itself
+        var withoutApp = false
         // Always-on VPN: Android starts the service by itself (at boot, or after the process was
         // killed), with no app to start the core over gRPC. The flag is whatever the last start
         // left, and a connect from the app clears it, so the service came up without the core
@@ -53,18 +56,69 @@ class TunnelService : VpnService(), PlatformInterfaceWrapper {
         if (intent?.action == VpnService.SERVICE_INTERFACE) {
             Log.i(TAG, "started by always-on VPN")
             Settings.startCoreAfterStartingService = true
-        } else if (intent == null) {
-            // D-09: the sticky service restarted by Android after the process was killed. Only a VPN
-            // the user had running comes back; one they stopped called stopSelf() and is not sticky.
+            withoutApp = true
+        } else if (intent == null || intent.action == Action.RESTORE) {
+            // D-09: the sticky service restarted by Android after the process was killed, or (SP3-02)
+            // the watchdog's start. Only a VPN the user had running comes back; one they stopped
+            // called stopSelf(), is not sticky and has no watchdog.
             if (!Settings.startedByUser) {
                 Log.i(TAG, "restarted by the system, but the VPN was stopped: not starting")
-                stopSelf()
+                if (intent == null) {
+                    stopSelf()
+                } else {
+                    service.refuseStart()
+                }
                 return START_NOT_STICKY
             }
-            Log.i(TAG, "restarted by the system after the process was killed: starting the last profile")
+            Log.i(
+                TAG,
+                if (intent == null) "restarted by the system after the process was killed: starting the last profile"
+                else "restored by the watchdog: starting the last profile",
+            )
             Settings.startCoreAfterStartingService = true
+            withoutApp = true
         }
+        // SP3-02: blocked first, connected after. Between this start and the core's own TUN nothing
+        // may leave around the VPN, nor stay so when the core cannot start (the TUN is then kept until
+        // the user's Stop, see BoxService.stopAndAlert).
+        if (withoutApp && service.isIdle()) holdBlockingTun()
         return service.onStartCommand()
+    }
+
+    /**
+     * SP3-02: a TUN that takes every route (IPv4 and IPv6, no DNS server) and that nothing reads: every
+     * app's traffic is dropped, nothing goes around the VPN. Its addresses are random private ones
+     * (10.64.0.0/10, fd00::/8), as the core's. The core's own TUN replaces it (openTun closes the
+     * previous descriptor); a stop releases it. Without the VPN permission (revoked) it cannot be made,
+     * and the core's start then fails the same way.
+     */
+    private fun holdBlockingTun() {
+        if (prepare(this) != null) {
+            Log.w(TAG, "no VPN permission: no blocking TUN")
+            return
+        }
+        try {
+            val random = java.security.SecureRandom()
+            val v4 = "10.${64 + random.nextInt(64)}.${random.nextInt(256)}.${1 + random.nextInt(254)}"
+            val v6 = "fd%02x:%x:%x::%x".format(random.nextInt(256), random.nextInt(65536), random.nextInt(65536), 1 + random.nextInt(0xfffe))
+            val pfd = Builder()
+                .setSession(getString(R.string.app_name))
+                .setMtu(1280)
+                .addAddress(v4, 32)
+                .addRoute("0.0.0.0", 0)
+                .addAddress(v6, 128)
+                .addRoute("::", 0)
+                .establish()
+            if (pfd == null) {
+                Log.w(TAG, "the blocking TUN was not made")
+                return
+            }
+            service.holdTun(pfd)
+            current = this
+            Log.i(TAG, "holding a blocking TUN until the core is up")
+        } catch (e: Exception) {
+            Log.w(TAG, "cannot make the blocking TUN", e)
+        }
     }
 
     override fun onBind(intent: Intent): IBinder {
@@ -76,7 +130,7 @@ class TunnelService : VpnService(), PlatformInterfaceWrapper {
     }
 
     /** D-01: an established TUN is held now. */
-    fun hasTun(): Boolean = service.fileDescriptor != null
+    fun hasTun(): Boolean = service.fileDescriptor != null && !service.tunIsBlocking
 
     override fun onDestroy() {
         if (current === this) current = null
@@ -280,6 +334,7 @@ class TunnelService : VpnService(), PlatformInterfaceWrapper {
         // previous one is closed here, and the interface goes once the core closes its own copy.
         val previous = service.fileDescriptor
         service.fileDescriptor = pfd
+        service.tunIsBlocking = false
         if (previous != null && previous !== pfd) runCatching { previous.close() }
         current = this
         return pfd.fd

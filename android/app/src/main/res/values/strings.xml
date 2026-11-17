@@ -6,6 +6,10 @@
     <string name="quick_toggle">Toggle</string>
     <string name="status_starting">Connecting…</string>
     <string name="status_started">Connected</string>
+    <string name="status_blocked">Not connected: traffic is blocked until you tap Stop or connect again</string>
+    <string name="notification_channel_restore">Tunnel stopped</string>
+    <string name="restore_tap">The tunnel stopped while it was on. Tap to turn it on again.</string>
+    <string name="restore_open_app">The tunnel stopped: Android no longer allows it. Open the app to allow the VPN again.</string>
     <string name="mode_vpn">VPN</string>
     <string name="mode_proxy">Proxy</string>
 </resources>

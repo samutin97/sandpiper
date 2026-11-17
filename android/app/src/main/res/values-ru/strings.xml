@@ -5,4 +5,8 @@
     <string name="quick_toggle">Вкл/выкл</string>
     <string name="status_starting">Подключение…</string>
     <string name="status_started">Подключено</string>
+    <string name="status_blocked">Не подключено: трафик заблокирован, пока вы не нажмёте «Отключить» или не подключитесь снова</string>
+    <string name="notification_channel_restore">Туннель остановлен</string>
+    <string name="restore_tap">Туннель остановился, хотя был включён. Нажмите, чтобы включить снова.</string>
+    <string name="restore_open_app">Туннель остановлен: Android больше не разрешает его. Откройте приложение, чтобы снова разрешить VPN.</string>
 </resources>

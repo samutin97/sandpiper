@@ -65,6 +65,15 @@ class BoxService(
         var activePlatformInterface: PlatformInterface? = null
             private set
 
+        /**
+         * SP3-02: a service of this process is starting, runs or holds its TUN. In a process Android
+         * started again after a kill it is false, which is how the watchdog (TunnelWatchdog) tells
+         * that the tunnel is gone.
+         */
+        @Volatile
+        var running = false
+            private set
+
         private var initializeOnce = false
         private lateinit var workingDir: File
         private fun initialize() {
@@ -124,6 +133,9 @@ class BoxService(
     }
 
     var fileDescriptor: ParcelFileDescriptor? = null
+
+    /** SP3-02: [fileDescriptor] is the blocking TUN of a start without the app, not the core's. */
+    var tunIsBlocking = false
 
     private val status = MutableLiveData(Status.Stopped)
     private val binder = ServiceBinder(status)
@@ -217,6 +229,8 @@ class BoxService(
             if (Settings.startCoreAfterStartingService){
                 Mobile.start("","")
                 }
+            // SP3-02: the second way back after the process is killed, beside START_STICKY
+            if (Settings.startedByUser) TunnelWatchdog.arm(service)
 //            if (delayStart) {
 //                delay(1000L)
 //            }
@@ -306,6 +320,8 @@ class BoxService(
                 receiverRegistered = false
             }
             Settings.startedByUser = false
+            TunnelWatchdog.disarm(service)
+            notification.close()
             service.stopSelf()
             return
         }
@@ -341,6 +357,7 @@ class BoxService(
 //            }
 //            commandServer = null
             Settings.startedByUser = false
+            TunnelWatchdog.disarm(service)
             if (activePlatformInterface === platformInterface) activePlatformInterface = null
             // Close the mode we actually started. Old code always closed 4 (insecure), so
             // mTLS background (mode 2) left :17079 listening and reconnect failed with
@@ -362,6 +379,7 @@ class BoxService(
 
     private suspend fun stopAndAlert(type: Alert, message: String? = null) {
         Settings.startedByUser = false
+        TunnelWatchdog.disarm(service)
         withContext(Dispatchers.Main) {
             // D-09: a TUN still held (fail-closed) is released by the user's stop, which comes as the
             // close broadcast: the receiver stays while it is held
@@ -369,7 +387,14 @@ class BoxService(
                 service.unregisterReceiver(receiver)
                 receiverRegistered = false
             }
-            notification.close()
+            if (fileDescriptor != null) {
+                // SP3-02: say so (a start without the app has nobody else to tell), with the Stop that
+                // releases the TUN; the service stays in the foreground while it holds it
+                runCatching { notification.show(activeProfileName, R.string.status_blocked) }
+                    .onFailure { notification.close() }
+            } else {
+                notification.close()
+            }
             binder.broadcast { callback ->
                 callback.onServiceAlert(type.ordinal, message)
             }
@@ -379,9 +404,11 @@ class BoxService(
 
     /**
      * D-09: START_STICKY. When the process is killed (low memory, a vendor's task killer, kill -9) while
-     * the VPN runs, Android starts the service again with a null intent, and it brings the VPN back
-     * with the last profile (Settings.activeConfigPath) by itself, without the app's UI. A stop by the
-     * user calls stopSelf(), so a stopped VPN is not brought back.
+     * the VPN runs, Android may start the service again with a null intent (when it does is up to
+     * Android: on some builds it waits until the app's process starts for another reason), and it
+     * brings the VPN back with the last profile (Settings.activeConfigPath) by itself, without the
+     * app's UI. SP3-02: TunnelWatchdog is the second way back. A stop by the user calls stopSelf() and
+     * cancels the watchdog, so a stopped VPN is not brought back.
      */
     @OptIn(DelicateCoroutinesApi::class)
     @Suppress("SameReturnValue")
@@ -418,6 +445,7 @@ class BoxService(
             return Service.START_STICKY
         }
         status.value = Status.Starting
+        running = true
 
         if (!receiverRegistered) {
             ContextCompat.registerReceiver(service, receiver, IntentFilter().apply {
@@ -447,7 +475,30 @@ class BoxService(
         return binder
     }
 
+    /** SP3-02: nothing started and no TUN held: a start without the app may hold a blocking TUN first. */
+    fun isIdle(): Boolean = status.value == Status.Stopped && fileDescriptor == null
+
+    /** SP3-02: holds [pfd], a TUN nothing reads, until the core's own replaces it (openTun) or a stop. */
+    fun holdTun(pfd: ParcelFileDescriptor) {
+        fileDescriptor?.let { previous -> runCatching { previous.close() } }
+        fileDescriptor = pfd
+        tunIsBlocking = true
+        running = true
+    }
+
+    /**
+     * A start the service must not act on (the watchdog's, after the user stopped the tunnel). It came
+     * through startForegroundService, so the service still goes to the foreground before it stops, or
+     * Android ends the process.
+     */
+    fun refuseStart() {
+        runCatching { notification.show(activeProfileName, R.string.status_starting) }
+        notification.close()
+        service.stopSelf()
+    }
+
     fun onDestroy() {
+        running = false
         if (receiverRegistered) {
             runCatching { service.unregisterReceiver(receiver) }
             receiverRegistered = false

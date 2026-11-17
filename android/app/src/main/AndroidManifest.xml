@@ -156,6 +156,10 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="local-connection" />
         </service>
+        <!-- SP3-02: the watchdog's alarm (TunnelWatchdog); only its own PendingIntent reaches it -->
+        <receiver
+            android:name=".bg.TunnelWatchdogReceiver"
+            android:exported="false" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
