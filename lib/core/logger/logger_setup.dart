@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart' show debugPrint, kReleaseMode;
 import 'package:hiddify/core/logger/log_level_compat.dart';
 import 'package:hiddify/core/logger/ring/log_ring.dart';
 import 'package:hiddify/core/logger/sinks/file_sink.dart';
+import 'package:hiddify/utils/custom_loggers.dart' show neutralSourceName;
 import 'package:logging/logging.dart';
 
 /// one place that turns a record into one line of text
@@ -111,7 +112,7 @@ String? originOf(StackTrace? stack) {
     final file = parts[parts.length - 3].split('/').last;
     final line = parts[parts.length - 2];
 
-    return '$method ($file:$line)';
+    return neutralSourceName('$method ($file:$line)');
   }
   return null;
 }

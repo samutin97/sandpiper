@@ -47,14 +47,22 @@ mixin CoreLogger {
 
 /// For static members and top level code, where there is no instance for a
 /// mixin to take a name from. Pass the class or subsystem name.
-Logger appLogger(String name) => Logger('app.$name');
+Logger appLogger(String name) => Logger('app.${neutralSourceName(name)}');
 
 /// `infra` keeps a prefix of its own, because "the network layer said this" is
 /// worth seeing at a glance.
-Logger infraLogger(String name) => Logger('infra.$name');
+Logger infraLogger(String name) => Logger('infra.${neutralSourceName(name)}');
 
-Logger coreLogger(String name) => Logger('core.$name');
+Logger coreLogger(String name) => Logger('core.${neutralSourceName(name)}');
 
 /// Boot, before anything else exists. Read first when the app fails to start,
 /// so it is worth keeping out of the other categories.
-Logger bootLogger(String name) => Logger('boot.$name');
+Logger bootLogger(String name) => Logger('boot.${neutralSourceName(name)}');
+
+/// A source name (a logger's, or the class and file of a frame) without the
+/// upstream app's name the code still carries, so the logs and a report the
+/// user sends read as this app's: `HiddifyCoreService` -> `CoreService`,
+/// `hiddify_core_service.dart` -> `core_service.dart`. Messages are not touched.
+String neutralSourceName(String name) => name
+    .replaceAll(RegExp('(?<![A-Za-z0-9])[Hh]iddify(?=[A-Z])'), '')
+    .replaceAll(RegExp('(?<![A-Za-z0-9])hiddify_'), '');
