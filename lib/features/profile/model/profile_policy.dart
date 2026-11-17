@@ -124,7 +124,11 @@ class ProfilePolicy {
       }
     }
     if (first) return null;
-    return ProfilePolicy(nodes: nodes, tiers: tiers, params: params);
+    final policy = ProfilePolicy(nodes: nodes, tiers: tiers, params: params);
+    // the canonical form brings numbers to their bounds, a few bytes more than the header at most:
+    // one over the limit is no policy, as in the core, so the two never disagree
+    if (policy.encode().length > maxLength) return null;
+    return policy;
   }
 
   static int? _parseNumber(String text) => _number.hasMatch(text) ? int.parse(text) : null;
@@ -212,18 +216,29 @@ class ProfilePolicy {
   }
 
   /// What the policy says of each proxy of [tags] (the profile's proxies), in the policy's order of
-  /// tiers; proxies it does not name are left out (they are manual, without scores).
+  /// tiers; proxies it does not name are left out (they are manual, without scores). A proxy named
+  /// in several tiers (by its number and by its name) is in the strictest of them, of equal ones the
+  /// first, as in the core (`tiered.Strictness`).
   Map<String, PolicyPlace> bind(Iterable<String> tags) {
     final list = tags.toList();
     final scores = <String, PolicyNode>{};
     for (final n in nodes) {
       if (n.ref.resolve(list) case final tag?) scores[tag] = n;
     }
+    final home = <String, int>{};
+    for (var i = 0; i < tiers.length; i++) {
+      for (final ref in tiers[i].refs) {
+        final tag = ref.resolve(list);
+        if (tag == null) continue;
+        final previous = home[tag];
+        if (previous == null || tiers[i].strictness > tiers[previous].strictness) home[tag] = i;
+      }
+    }
     final places = <String, PolicyPlace>{};
     for (var i = 0; i < tiers.length; i++) {
       for (final (order, ref) in tiers[i].refs.indexed) {
         final tag = ref.resolve(list);
-        if (tag == null || places.containsKey(tag)) continue;
+        if (tag == null || places.containsKey(tag) || home[tag] != i) continue;
         places[tag] = PolicyPlace(tier: i, mode: tiers[i].mode, node: scores[tag], order: order);
       }
     }
@@ -369,6 +384,15 @@ class PolicyTier {
   final List<PolicyRef> refs;
   final bool confirm;
   final int? maxMinutes;
+
+  /// For a proxy named in several tiers: the strictest holds it. Manual (never chosen), then a last
+  /// resort that waits for the user's agreement, a last resort, a fallback, auto.
+  int get strictness => switch (mode) {
+    TierMode.manual => 4,
+    TierMode.lastResort => confirm ? 3 : 2,
+    TierMode.fallback => 1,
+    TierMode.auto => 0,
+  };
 }
 
 /// Where the policy puts one proxy: its tier and mode, and its scores when the policy gives them.

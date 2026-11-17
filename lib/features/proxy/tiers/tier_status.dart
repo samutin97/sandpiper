@@ -78,7 +78,9 @@ class TierStatus {
 
   bool get onLastResort => onReserve && mode == TierMode.lastResort;
 
-  bool get waitsForUser => reason == reasonConfirm && confirm.isNotEmpty;
+  /// The core waits for the user's agreement to the last resort [confirm]: no connection meanwhile.
+  /// It stays so while the core tries the options above again now and then (reason `checking`).
+  bool get waitsForUser => confirm.isNotEmpty;
 }
 
 /// The tiered group's state while the user has it picked in the main group; null otherwise (no

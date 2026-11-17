@@ -8,11 +8,13 @@ import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/model/profile_policy.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
+import 'package:hiddify/features/proxy/model/proxy_entity.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
 import 'package:hiddify/features/proxy/tiers/tier_status.dart';
 import 'package:hiddify/features/proxy/tiers/tier_widgets.dart';
 import 'package:hiddify/features/proxy/widget/proxy_tile.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
+import 'package:hiddify/singbox/model/singbox_config_enum.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 // The server's rating in the app: what shows with a policy, and that nothing shows without one.
@@ -101,7 +103,9 @@ Future<(Translations, _Toasts)> _pump(
       container: container,
       child: MaterialApp(
         home: Scaffold(
-          body: Center(child: SizedBox(width: width, child: child)),
+          body: Center(
+            child: SizedBox(width: width, child: child),
+          ),
         ),
       ),
     ),
@@ -225,7 +229,11 @@ void main() {
 
   testWidgets('home: a reserve in use says which and why', (tester) async {
     final state = _state({'tier': 2, 'mode': 'fallback', 'node': '9 India HTTP3', 'reason': 'tcp-blocked', 'since': 1});
-    final (t, toasts) = await _pump(tester, const TierBanner(), main: _mainList(picked: tieredGroupTag, state: state));
+    final (t, toasts) = await _pump(
+      tester,
+      const TierBanner(),
+      main: _mainList(picked: tieredGroupTag, state: state),
+    );
     expect(find.text(t.fork.tiers.banner.reserveTitle(name: '9 India HTTP3')), findsOneWidget);
     expect(find.text(t.fork.tiers.banner.tcpBlocked), findsOneWidget);
     expect(find.text(t.fork.tiers.banner.backUp), findsOneWidget);
@@ -234,30 +242,96 @@ void main() {
 
   testWidgets('home: the top tier working shows nothing', (tester) async {
     final state = _state({'tier': 0, 'mode': 'auto', 'node': '2 Bravo gRPC', 'reason': 'ok'});
-    await _pump(tester, const TierBanner(), main: _mainList(picked: tieredGroupTag, state: state));
+    await _pump(
+      tester,
+      const TierBanner(),
+      main: _mainList(picked: tieredGroupTag, state: state),
+    );
     expect(find.byKey(const ValueKey('tier-banner')), findsNothing);
   });
 
   testWidgets('home: the user picked another option, the state of the group shows nothing', (tester) async {
     final state = _state({'tier': 2, 'mode': 'fallback', 'node': '9 India HTTP3', 'reason': 'tcp-blocked'});
-    await _pump(tester, const TierBanner(), main: _mainList(picked: '2 Bravo gRPC', state: state));
+    await _pump(
+      tester,
+      const TierBanner(),
+      main: _mainList(picked: '2 Bravo gRPC', state: state),
+    );
     expect(find.byKey(const ValueKey('tier-banner')), findsNothing);
   });
 
   testWidgets('home: the last resort waits for the user, with Use and Not now', (tester) async {
     final state = _state({'tier': 2, 'mode': 'last-resort', 'reason': 'confirm', 'confirm': '10 Juliet WG'});
-    final (t, _) = await _pump(tester, const TierBanner(), main: _mainList(picked: tieredGroupTag, state: state));
+    final (t, _) = await _pump(
+      tester,
+      const TierBanner(),
+      main: _mainList(picked: tieredGroupTag, state: state),
+    );
     expect(find.text(t.fork.tiers.banner.confirmTitle), findsOneWidget);
     expect(find.text(t.fork.tiers.banner.confirmBody(name: '10 Juliet WG')), findsOneWidget);
     expect(find.text(t.fork.tiers.banner.use), findsOneWidget);
+    // no connection until the user decides: "not now" folds the question, it does not hide it
     await tester.tap(find.text(t.fork.tiers.banner.notNow));
     await tester.pump();
-    expect(find.byKey(const ValueKey('tier-banner')), findsNothing);
+    expect(find.text(t.fork.tiers.banner.waitingTitle), findsOneWidget);
+    expect(find.text(t.fork.tiers.banner.confirmBody(name: '10 Juliet WG')), findsNothing);
+    expect(find.text(t.fork.tiers.banner.use), findsOneWidget);
+    expect(find.text(t.fork.tiers.banner.notNow), findsNothing);
   });
+
+  testWidgets('home: the question stays while the core tries the options above again', (tester) async {
+    final state = _state({
+      'tier': 0,
+      'mode': 'auto',
+      'node': '2 Bravo gRPC',
+      'reason': 'checking',
+      'checking': true,
+      'confirm': '10 Juliet WG',
+    });
+    final (t, _) = await _pump(
+      tester,
+      const TierBanner(),
+      main: _mainList(picked: tieredGroupTag, state: state),
+    );
+    expect(find.text(t.fork.tiers.banner.confirmTitle), findsOneWidget);
+  });
+
+  for (final locale in [AppLocale.ru, AppLocale.en]) {
+    testWidgets('home, ${locale.languageCode}: the group held for the user is "no connection", not a proxy', (
+      tester,
+    ) async {
+      final list = OutboundGroupList(
+        items: [
+          OutboundGroup(
+            tag: 'select',
+            selectable: true,
+            selected: tieredGroupTag,
+            items: [OutboundInfo(tag: tieredGroupTag, isGroup: true, groupSelectedTagDisplay: 'tiered-wait')],
+          ),
+          OutboundGroup(
+            tag: tieredGroupTag,
+            tierState: _state({'tier': 2, 'mode': 'last-resort', 'reason': 'confirm', 'confirm': '10 Juliet WG'}),
+            items: [OutboundInfo(tag: tieredWaitTag)],
+          ),
+        ],
+      );
+      final card = ActiveProxyCardData.from(list, chain: ChainStatus.off, hopMode: ChainMode.psiphon)!;
+      expect(card.serverStatus, StepStatus.failed);
+      expect(list.items.first.items.first.groupHeld, isTrue);
+      final (t, _) = await _pump(tester, const TierBanner(), main: list, locale: locale);
+      expect(find.text(t.fork.tiers.banner.confirmTitle), findsOneWidget);
+      expect(t.fork.tiers.banner.noConnection, isNotEmpty);
+      expect(t.fork.tiers.banner.waiting, isNotEmpty);
+    });
+  }
 
   testWidgets('home: the last resort in use, with a toast when it starts', (tester) async {
     final state = _state({'tier': 2, 'mode': 'last-resort', 'node': '10 Juliet WG', 'reason': 'tcp-blocked'});
-    final (t, toasts) = await _pump(tester, const TierBanner(), main: _mainList(picked: tieredGroupTag, state: state));
+    final (t, toasts) = await _pump(
+      tester,
+      const TierBanner(),
+      main: _mainList(picked: tieredGroupTag, state: state),
+    );
     expect(find.text(t.fork.tiers.banner.lastResortTitle(name: '10 Juliet WG')), findsOneWidget);
     expect(find.text(t.fork.tiers.banner.lastResortHint), findsOneWidget);
     expect(toasts.shown, [t.fork.tiers.banner.toast(name: '10 Juliet WG')]);

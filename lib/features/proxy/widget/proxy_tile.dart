@@ -116,7 +116,11 @@ class ProxyTile extends HookConsumerWidget with PresLogger {
             proxy.typeWithoutStatus,
             suffix: [
               if (proxy.isGroup)
-                TextSpan(text: ' (${proxy.groupSelectedTagDisplay.trim()})', style: theme.textTheme.bodySmall),
+                TextSpan(
+                  text:
+                      ' (${proxy.groupHeld ? t.fork.tiers.banner.noConnection : proxy.groupSelectedTagDisplay.trim()})',
+                  style: theme.textTheme.bodySmall,
+                ),
             ],
             style: faded ? TextStyle(color: theme.colorScheme.onSurfaceVariant.withValues(alpha: _fadedAlpha)) : null,
           ),

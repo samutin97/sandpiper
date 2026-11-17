@@ -42,6 +42,11 @@ String _sanitizedTag(String tag) => tag.replaceFirst(RegExp(r"\§[^]*"), "").tri
 const lowestGroupTag = 'lowest';
 const balanceGroupTag = 'balance';
 
+/// The member the core holds its group of the server's rating on while only a last resort that
+/// waits for the user's agreement is left (hiddify-core `config.OutboundTieredWaitTag`): it carries
+/// nothing, so there is no connection until the user decides.
+const tieredWaitTag = 'tiered-wait §hide§';
+
 /// Where one step of the connection (the server, or the chain hop) stands.
 enum StepStatus {
   /// The step it dials through has not connected yet.
@@ -84,7 +89,8 @@ class ActiveProxyCardData {
     final server = chosen ?? picked;
     final hop = !chain.isOff() && list.hasChainHop() ? list.chainHop : null;
 
-    var serverStatus = _serverStatusOf(server);
+    // the group of the server's rating held for the user's decision: no connection, not "connecting"
+    var serverStatus = server.tag == tieredWaitTag ? StepStatus.failed : _serverStatusOf(server);
     var hopStatus = chain.isOff() ? null : _hopStatusOf(hop);
     // A step dials through the one before it: extra security through the server, the server
     // through the unblocker. Until that one connects, the step's own results mean nothing.
@@ -170,6 +176,10 @@ class ActiveProxyCardData {
 extension OutboundInfoCard on OutboundInfo {
   /// The name, without the core's hidden suffix.
   String get name => _sanitizedTag(tag);
+
+  /// A group whose traffic goes nowhere now: the group of the server's rating held for the user's
+  /// decision on its last resort (directly, or through select).
+  bool get groupHeld => isGroup && groupSelectedTagDisplay.trim() == _sanitizedTag(tieredWaitTag);
 
   /// The name, and the user's own proxy it dials through ("A → B"). The app's own hidden ones,
   /// such as the chain hop, are left out.

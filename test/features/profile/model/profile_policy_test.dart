@@ -61,6 +61,40 @@ void main() {
     expect(scoredOnly.containsKey('2 Bravo gRPC'), isFalse);
   });
 
+  test('a proxy named in several tiers (number and name) is in the strictest, as in the core', () {
+    final alias = ProfilePolicy.parse('v=1;t=auto:@10%20Juliet%20WG,2;t=last-resort,confirm:10')!.bind(sampleTags);
+    expect(alias['10 Juliet WG']!.mode, TierMode.lastResort);
+    expect(alias['10 Juliet WG']!.tier, 1);
+    expect(alias['2 Bravo gRPC']!.mode, TierMode.auto);
+    final manual = ProfilePolicy.parse('v=1;t=auto:2,3;t=manual:@2%20Bravo%20gRPC')!.bind(sampleTags);
+    expect(manual['2 Bravo gRPC']!.mode, TierMode.manual);
+    // of equal tiers the first
+    final equal = ProfilePolicy.parse('v=1;t=auto:2;t=auto:@2%20Bravo%20gRPC,3')!.bind(sampleTags);
+    expect(equal['2 Bravo gRPC']!.tier, 0);
+  });
+
+  test('a header whose canonical form is over 2048 bytes is no policy, as in the core', () {
+    const params = ';up=1;chk=1;hold=1;ttl=1'; // canonical: 6 bytes more
+    final b = StringBuffer('v=1;t=auto:1');
+    final room = ProfilePolicy.maxLength - b.length - params.length;
+    final nodes = (room + 97) ~/ 98;
+    var names = room - 8 * nodes;
+    for (var i = 0; i < nodes; i++) {
+      var l = names - (nodes - 1 - i);
+      if (l > 90) l = 90;
+      names -= l;
+      b.write(';n=@${String.fromCharCode(97 + i)}${'x' * (l - 1)}:555');
+    }
+    b.write(params);
+    final header = b.toString();
+    expect(header.length, ProfilePolicy.maxLength);
+    expect(ProfilePolicy.parse(header), isNull);
+    final short = '${header.substring(0, header.length - params.length)};up=300;chk=120';
+    final p = ProfilePolicy.parse(short)!;
+    expect(p.encode().length, lessThanOrEqualTo(ProfilePolicy.maxLength));
+    expect(ProfilePolicy.parse(p.encode()), p);
+  });
+
   test('references', () {
     const tags = ['1 One', '10 Ten', '11§hide§x', '2. Two', 'Plain name', '3 Three', '3 Three again', '04 Zero', 'Имя'];
     expect(const PolicyRef.number(1).resolve(tags), '1 One');
@@ -203,11 +237,18 @@ void main() {
       expect(ProfileParser.tierPolicySetting(headers, null), isNull, reason: 'a local profile');
       expect(ProfileParser.tierPolicySetting(headers, 'http://sub.example.net/x'), isNull);
       final override =
-          jsonDecode(ProfileParser.profileOverride(populatedHeaders: headers, userOverride: null, subscriptionUrl: 'https://sub.example.net/x'))
+          jsonDecode(
+                ProfileParser.profileOverride(
+                  populatedHeaders: headers,
+                  userOverride: null,
+                  subscriptionUrl: 'https://sub.example.net/x',
+                ),
+              )
               as Map<String, dynamic>;
       expect((override['tier-policy'] as Map)['policy'], sampleCanonical);
       expect(override.containsKey('profile-policy'), isFalse);
-      final none = jsonDecode(ProfileParser.profileOverride(populatedHeaders: {}, userOverride: null)) as Map<String, dynamic>;
+      final none =
+          jsonDecode(ProfileParser.profileOverride(populatedHeaders: {}, userOverride: null)) as Map<String, dynamic>;
       expect(none.containsKey('tier-policy'), isFalse);
     });
   });

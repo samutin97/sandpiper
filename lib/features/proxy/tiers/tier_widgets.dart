@@ -346,26 +346,28 @@ class TierBanner extends HookConsumerWidget {
     if (status == null) return const SizedBox.shrink();
     final b = t.fork.tiers.banner;
     if (status.waitsForUser) {
-      if (dismissed.value == status.confirm) return const SizedBox.shrink();
+      // no connection until the user decides: "not now" folds the question, it never hides that
       final name = ProfilePolicy.displayName(status.confirm);
+      final folded = dismissed.value == status.confirm;
+      final use = FilledButton.tonal(
+        onPressed: () async {
+          final ok = await ref
+              .read(proxyRepositoryProvider)
+              .selectProxy(tieredGroupTag, status.confirm)
+              .map((_) => true)
+              .getOrElse((_) => false)
+              .run();
+          if (!ok) ref.read(inAppNotificationControllerProvider).showErrorToast(b.confirmFailed);
+        },
+        child: Text(b.use),
+      );
       return _BannerCard(
         mode: TierMode.lastResort,
-        title: b.confirmTitle,
-        lines: [b.confirmBody(name: name)],
+        title: folded ? b.waitingTitle : b.confirmTitle,
+        lines: [if (!folded) b.confirmBody(name: name)],
         actions: [
-          TextButton(onPressed: () => dismissed.value = status.confirm, child: Text(b.notNow)),
-          FilledButton.tonal(
-            onPressed: () async {
-              final ok = await ref
-                  .read(proxyRepositoryProvider)
-                  .selectProxy(tieredGroupTag, status.confirm)
-                  .map((_) => true)
-                  .getOrElse((_) => false)
-                  .run();
-              if (!ok) ref.read(inAppNotificationControllerProvider).showErrorToast(b.confirmFailed);
-            },
-            child: Text(b.use),
-          ),
+          if (!folded) TextButton(onPressed: () => dismissed.value = status.confirm, child: Text(b.notNow)),
+          use,
         ],
       );
     }

@@ -327,6 +327,9 @@ class _ProxyRow extends ConsumerWidget {
     final s = theme.colorScheme;
     final server = card.server;
     final status = card.serverStatus;
+    // the group of the server's rating holds for the user's decision on its last resort
+    final held = server.tag == tieredWaitTag;
+    final serverName = held ? t.fork.tiers.banner.noConnection : server.name;
     final connected = status == StepStatus.connected;
     final muted = theme.textTheme.labelMedium?.copyWith(color: s.onSurfaceVariant);
     final nameStyle = _nameStyle(context, status);
@@ -356,7 +359,7 @@ class _ProxyRow extends ConsumerWidget {
       title: Semantics(
         label: t.pages.proxies.activeProxy,
         child: group == null
-            ? Text(server.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: nameStyle)
+            ? Text(serverName, maxLines: 1, overflow: TextOverflow.ellipsis, style: nameStyle)
             : Row(
                 children: [
                   Icon(
@@ -378,13 +381,14 @@ class _ProxyRow extends ConsumerWidget {
                   Flexible(
                     child: group == balanceGroupTag
                         ? const _StrategyChip()
-                        : Text(server.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: nameStyle),
+                        : Text(serverName, maxLines: 1, overflow: TextOverflow.ellipsis, style: nameStyle),
                   ),
                 ],
               ),
       ),
       subtitle: switch (status) {
         // lowest picks the best server, so lowest failing means none answers
+        StepStatus.failed when held => _Problem(t.fork.tiers.banner.waiting),
         StepStatus.failed => _Problem(
           group == lowestGroupTag ? t.pages.proxies.noneResponding : t.pages.proxies.notResponding,
         ),
