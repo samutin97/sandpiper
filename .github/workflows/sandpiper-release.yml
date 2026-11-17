@@ -325,9 +325,13 @@ jobs:
           for pair in arm64-v8a:app-arm64-v8a-release armeabi-v7a:app-armeabi-v7a-release x86_64:app-x86_64-release universal:app-release; do
             abi="${pair%%:*}"; apk="$f/${pair#*:}.apk"
             [[ -f "$apk" ]] || { echo "::error::$apk was not built"; exit 1; }
-            cert="$("${bt}apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+            # apksigner words the line differently between build-tools versions ("Signer #1 certificate ..." or
+            # "Signer (minSdkVersion=..., maxSdkVersion=...) certificate ..."): take every signer line, require one value
+            "${bt}apksigner" verify --print-certs "$apk" > "$RUNNER_TEMP/certs.txt"
+            cert="$(sed -n 's/^Signer .*certificate SHA-256 digest: //p' "$RUNNER_TEMP/certs.txt" | sort -u)"
             if [[ "$cert" != "$ANDROID_CERT_SHA256" ]]; then
-              echo "::error::$apk is signed by $cert, not by the release certificate $ANDROID_CERT_SHA256"
+              grep -E 'certificate (DN|SHA-256 digest)' "$RUNNER_TEMP/certs.txt" || head -20 "$RUNNER_TEMP/certs.txt"
+              echo "::error::$apk is signed by '$cert', not by the release certificate $ANDROID_CERT_SHA256"
               exit 1
             fi
             python3 -I scripts/check-sandpiper-apk.py "${bt}aapt2" "$apk" > /dev/null
