@@ -326,9 +326,9 @@ jobs:
             abi="${pair%%:*}"; apk="$f/${pair#*:}.apk"
             [[ -f "$apk" ]] || { echo "::error::$apk was not built"; exit 1; }
             # apksigner words the line differently between build-tools versions ("Signer #1 certificate ..." or
-            # "Signer (minSdkVersion=..., maxSdkVersion=...) certificate ..."): take every signer line, require one value
+            # "V3.0 Signer: certificate ..."): take every certificate line, require one value
             "${bt}apksigner" verify --print-certs "$apk" > "$RUNNER_TEMP/certs.txt"
-            cert="$(sed -n 's/^Signer .*certificate SHA-256 digest: //p' "$RUNNER_TEMP/certs.txt" | sort -u)"
+            cert="$(sed -n 's/^.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/certs.txt" | sort -u)"
             if [[ "$cert" != "$ANDROID_CERT_SHA256" ]]; then
               grep -E 'certificate (DN|SHA-256 digest)' "$RUNNER_TEMP/certs.txt" || head -20 "$RUNNER_TEMP/certs.txt"
               echo "::error::$apk is signed by '$cert', not by the release certificate $ANDROID_CERT_SHA256"
