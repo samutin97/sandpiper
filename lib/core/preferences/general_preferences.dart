@@ -99,6 +99,23 @@ abstract class Preferences {
 
   static final perAppProxyEnabled = PreferencesNotifier.create<bool, bool>("per_app_proxy_enabled", false);
 
+  /// D-08: the server's test endpoints of the path check, on the host of the active subscription: a
+  /// file of at least 64 KiB (the core GETs its first 64 KiB) and a path that reads a POST of 64 KiB.
+  /// Empty by default (the dialog then asks for "/"): the server's administrator gives them, and the
+  /// dialog keeps what was entered. No server's own paths are built in, the source and the builds are
+  /// public.
+  static final dpiProbeDownloadPath = PreferencesNotifier.create<String, String>(
+    "dpi_probe_download_path",
+    "",
+  );
+  static final dpiProbeUploadPath = PreferencesNotifier.create<String, String>(
+    "dpi_probe_upload_path",
+    "",
+  );
+
+  /// Item 8: whether the app has offered, once, to keep the built-in list's apps out of the VPN.
+  static final splitTunnelOffered = PreferencesNotifier.create<bool, bool>("split_tunnel_offered", false);
+
   // Kept while App-based routing is off, for when it is turned on again.
   static final perAppProxyMode = PreferencesNotifier.create<AppProxyMode, String>(
     "per_app_proxy_mode",
@@ -114,9 +131,23 @@ abstract class Preferences {
 
   static final markNewProfileActive = PreferencesNotifier.create<bool, bool>("mark_new_profile_active", true);
 
+  /// H-02: whether subscriptions update on their own while nothing carries the app through the
+  /// tunnel (VPN off, or a core that keeps the app out of its VPN). Off: the provider would see each
+  /// request to the subscription's server, so they wait for the VPN (an update by hand asks first).
+  /// With the hardened core the app is inside its VPN, so updates run on their own while connected.
+  static final updateProfilesWithoutTunnel = PreferencesNotifier.create<bool, bool>(
+    "update_profiles_without_tunnel",
+    false,
+  );
+
   static final dynamicNotification = PreferencesNotifier.create<bool, bool>("dynamic_notification", true);
 
-  static final autoCheckIp = PreferencesNotifier.create<bool, bool>("auto_check_ip", true);
+  /// Android: FLAG_SECURE on the app's window: no screenshot, screen recording or Recents preview of
+  /// configs, QR codes and links (L-06). On by default.
+  static final secureScreen = PreferencesNotifier.create<bool, bool>("secure_screen", true);
+
+  // off: the exit IP is looked up only when the user asks, and only through the tunnel
+  static final autoCheckIp = PreferencesNotifier.create<bool, bool>("auto_check_ip", false);
 
   /// The beta channel: updates to pre-releases (a .dev tag, or one still a pre-release on GitHub)
   /// too, not only to stable releases.

@@ -19,7 +19,6 @@ import 'package:hiddify/core/router/dialog/widgets/setting_radio_dialog.dart';
 import 'package:hiddify/core/router/dialog/widgets/setting_slider_dialog.dart';
 import 'package:hiddify/core/router/dialog/widgets/setting_text_dialog.dart';
 import 'package:hiddify/core/router/dialog/widgets/sort_profiles_dialog.dart';
-import 'package:hiddify/core/router/dialog/widgets/telegram_channel_dialog.dart';
 import 'package:hiddify/core/router/dialog/widgets/unknown_domains_warning_dialog.dart';
 import 'package:hiddify/core/router/dialog/widgets/window_closing_dialog.dart';
 import 'package:hiddify/core/router/go_router/go_router_notifier.dart';
@@ -158,9 +157,6 @@ class DialogNotifier extends _$DialogNotifier {
     return await _show<void>(NewVersionDialog(currentVersion, newVersion, canIgnore: canIgnore));
   }
 
-  Future<void> showTelegramChannel() async {
-    return await _show<void>(const TelegramChannelDialog());
-  }
 
   Future<bool> showConfirmation({
     required String title,

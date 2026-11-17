@@ -1,6 +1,6 @@
 {
   "common": {
-    "appTitle": "Hiddify",
+    "appTitle": "Sandpiper",
     "start": "Começar",
     "version": "Versão",
     "ok": "OK",
@@ -201,7 +201,7 @@
         "share": "Compartilhar",
         "edit": "Editar",
         "shareTitle": "Compartilhar proxy",
-        "configHint": "Apenas este proxy e qualquer proxy pelo qual ele se conecta. O Hiddify o importa como qualquer configuração.",
+        "configHint": "Apenas este proxy e qualquer proxy pelo qual ele se conecta. O Sandpiper o importa como qualquer configuração.",
         "editTitle": "Editar como novo perfil",
         "editMsg": "“${name}” é copiado para um novo perfil que você pode editar. O original permanece como está, pois uma assinatura substitui seus proxies a cada atualização.",
         "editConfirm": "Copiar e editar",
@@ -221,7 +221,7 @@
         "received": "Recebido do seu celular",
         "from": "De $address",
         "page": {
-          "title": "Enviar para o Hiddify na TV",
+          "title": "Enviar para o Sandpiper na TV",
           "intro": "Adicione uma assinatura à TV em quatro passos rápidos, sem digitar com o controle.",
           "steps": {
             "network": {
@@ -260,7 +260,7 @@
       "updateSubscriptions": "Atualizar assinaturas",
       "share": {
         "title": "Compartilhar perfil",
-        "scanHint": "Escaneie com o Hiddify em outro dispositivo para adicionar este perfil",
+        "scanHint": "Escaneie com o Sandpiper em outro dispositivo para adicionar este perfil",
         "link": "Link de assinatura",
         "config": "Configuração",
         "configHint": "O JSON completo com que este perfil funciona, incluindo suas configurações",
@@ -271,9 +271,9 @@
         "tooLargeToCopy": "Grande demais para a área de transferência: compartilhe ou salve como arquivo",
         "toTv": {
           "button": "Enviar para a TV",
-          "scanHint": "Na TV, abra o Hiddify e toque em + para adicionar um perfil, depois escaneie o código exibido. Os dois dispositivos devem estar no mesmo Wi-Fi.",
+          "scanHint": "Na TV, abra o Sandpiper e toque em + para adicionar um perfil, depois escaneie o código exibido. Os dois dispositivos devem estar no mesmo Wi-Fi.",
           "sent": "Enviado. Pressione Importar na TV para adicioná-lo.",
-          "notTvCode": "Este não é um código de TV do Hiddify. Na TV, toque em + para adicionar um perfil e exibi-lo.",
+          "notTvCode": "Este não é um código de TV do Sandpiper. Na TV, toque em + para adicionar um perfil e exibi-lo.",
           "expired": "A TV não aceita mais links com este código. Abra novamente a tela de adicionar perfil na TV e escaneie o novo código.",
           "busy": "A TV tem links demais na espera. Importe ou descarte-os na TV e tente novamente.",
           "unreachable": "Não foi possível alcançar a TV. Verifique se o celular e a TV estão na mesma rede Wi-Fi."
@@ -930,7 +930,7 @@
       "updateNow": "Atualizar agora",
       "downloading": "Baixando…",
       "installing": "Iniciando o instalador…",
-      "allowInstall": "Permita que o Hiddify instale apps nas configurações que abriram e tente de novo.",
+      "allowInstall": "Permita que o Sandpiper instale apps nas configurações que abriram e tente de novo.",
       "failed": "Não foi possível instalar a atualização.",
       "openPage": "Abrir a página da versão",
       "tryAgain": "Tentar de novo"
@@ -977,7 +977,7 @@
         "someApps": "Navegadores e a maioria dos aplicativos",
         "switched": "Mudou para o modo de proxy do sistema. Você pode alterar isso em Configurações.",
         "waitingTitle": "Aguardando permissão de administrador",
-        "waitingMsg": "O Hiddify está esperando você permitir o modo VPN.",
+        "waitingMsg": "O Sandpiper está esperando você permitir o modo VPN.",
         "waitingWhere": "Na janela que abriu:",
         "waitingWindows": "Clique em “Sim”.",
         "waitingMac": "Digite a senha do seu Mac e confirme.",
@@ -994,7 +994,7 @@
         "helpProsTitle": "Pontos positivos",
         "helpConsTitle": "Tenha em mente",
         "helpVpn": {
-          "what": "O Hiddify adiciona uma rede virtual ao seu computador, e o tráfego de internet de cada aplicativo passa por ela automaticamente: navegadores, Telegram, jogos, atualizações e o resto. Nada precisa ser configurado em cada aplicativo.",
+          "what": "O Sandpiper adiciona uma rede virtual ao seu computador, e o tráfego de internet de cada aplicativo passa por ela automaticamente: navegadores, Telegram, jogos, atualizações e o resto. Nada precisa ser configurado em cada aplicativo.",
           "pros": [
             "Todos os aplicativos passam pelo Hiddify, sem configurações em cada um.",
             "Aplicativos que ignoram as configurações de proxy, como o Telegram e jogos, também funcionam.",
@@ -1006,7 +1006,7 @@
           ]
         },
         "helpSystemProxy": {
-          "what": "O Hiddify altera a configuração de proxy do seu computador. Os aplicativos que seguem essa configuração, como os navegadores, enviam seu tráfego pelo Hiddify; os demais se conectam diretamente, como se o Hiddify estivesse desligado.",
+          "what": "O Sandpiper altera a configuração de proxy do seu computador. Os aplicativos que seguem essa configuração, como os navegadores, enviam seu tráfego pelo Sandpiper; os demais se conectam diretamente, como se o Sandpiper estivesse desligado.",
           "pros": [
             "Não exige permissão de administrador.",
             "Rápido de ativar e desativar, e o Hiddify restaura a configuração quando você desconecta.",
@@ -1041,7 +1041,7 @@
       "msg": "Vamos começar. Adicione um perfil de conexão com os detalhes do seu servidor VPN.\n\nAinda não tem servidor? Sem problema. O guia abaixo mostra como criar um de graça.",
       "helpBtn": {
         "label": "Mostre-me como",
-        "url": "https://hiddify.com/manager/"
+        "url": "https://github.com/hiddify/Hiddify-Manager"
       }
     },
     "unknownDomainsWarning": {
@@ -1196,16 +1196,16 @@
     },
     "dbNewerThanApp": {
       "title": "Os dados salvos são de uma versão mais nova",
-      "msg": "Seus perfis e configurações foram salvos por uma versão mais nova do Hiddify, e esta versão mais antiga não consegue lê-los. Instale a versão mais recente para mantê-los ou exclua-os para usar esta versão.",
+      "msg": "Seus perfis e configurações foram salvos por uma versão mais nova do Sandpiper, e esta versão mais antiga não consegue lê-los. Instale a versão mais recente para mantê-los ou exclua-os para usar esta versão.",
       "deleteData": "Apagar dados",
       "deleteConfirm": "Os dados salvos serão apagados. Suas assinaturas e perfis locais são adicionados de volta quando possível; tudo o mais salvo pela versão mais nova será perdido.",
       "downloadLatest": "Baixar a versão mais recente"
     },
     "dbBroken": {
       "title": "Não foi possível abrir os dados salvos",
-      "msg": "O Hiddify não conseguiu abrir seus perfis salvos. Apague os dados salvos para começar de novo: suas assinaturas e perfis locais são adicionados de volta quando possível, e suas configurações são mantidas.",
+      "msg": "O Sandpiper não conseguiu abrir seus perfis salvos. Apague os dados salvos para começar de novo: suas assinaturas e perfis locais são adicionados de volta quando possível, e suas configurações são mantidas.",
       "wipeData": "Apagar dados",
-      "wipeConfirm": "Os dados salvos serão apagados e o Hiddify começa de novo. Os perfis que ainda puderem ser lidos são adicionados de volta; o resto não pode ser recuperado.",
+      "wipeConfirm": "Os dados salvos serão apagados e o Sandpiper começa de novo. Os perfis que ainda puderem ser lidos são adicionados de volta; o resto não pode ser recuperado.",
       "copyError": "Copiar erro"
     }
   },

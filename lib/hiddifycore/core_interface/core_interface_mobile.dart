@@ -22,6 +22,7 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
 
   static const channelPrefix = "com.hiddify.app";
   static const methodChannel = MethodChannel("$channelPrefix/method");
+  static const platformChannel = MethodChannel("$channelPrefix/platform");
   static const statusChannel = EventChannel("$channelPrefix/service.status", JSONMethodCodec());
   static const alertsChannel = EventChannel("$channelPrefix/service.alerts", JSONMethodCodec());
 
@@ -29,8 +30,41 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
   /// platform service (see GrpcClientIdentity).
   late GrpcClientIdentity _identity;
 
-  static const portBack = 17079;
-  static const portFront = 17078;
+  // M-01: the fixed ports of upstream (17078/17079), used only with a core that can not take a free
+  // port and tell it; the hardened core listens on a free port each start (get_grpc_port).
+  static const fixedPortBack = 17079;
+  static const fixedPortFront = 17078;
+  int portBack = fixedPortBack;
+  int portFront = fixedPortFront;
+
+  bool? _hardenedCore;
+
+  /// Whether the in-process core is the fork's hardened one: it reports the free port each control
+  /// server took, so the fixed ports are never used, nor probed (D-02).
+  Future<bool> _hardened() async {
+    if (_hardenedCore != null) return _hardenedCore!;
+    if (!Platform.isAndroid) return _hardenedCore = false;
+    try {
+      return _hardenedCore = await methodChannel.invokeMethod<bool>('core_hardened') ?? false;
+    } catch (_) {
+      return _hardenedCore = false;
+    }
+  }
+
+  /// The port the core's control server of [mode] (1 app, 2 VPN service) listens on: with the
+  /// hardened core the one it reports, 0 while it is not running; with the official core [fallback].
+  Future<int> _grpcPort(int mode, int fallback) async {
+    if (!await _hardened()) return fallback;
+    try {
+      return await methodChannel.invokeMethod<int>('get_grpc_port', mode) ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// Whether the control server on [port] answers. Port 0 (the hardened core's server not running)
+  /// is not probed: D-02, no connection to a port another app may hold.
+  Future<bool> _serverUp(int port) async => port > 0 && await isPortOpen('127.0.0.1', port);
 
   bool _isBgClientAvailable = false;
   bool _debug = false;
@@ -80,17 +114,19 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
     }
 
     // Start the core first — the server certificate only exists after setup.
-    if (!await isPortOpen('127.0.0.1', portFront)) {
+    portFront = await _grpcPort(1, fixedPortFront);
+    if (!await _serverUp(portFront)) {
       final setupResult = await methodChannel.invokeMethod<dynamic>('setup', {
         'baseDir': directories.baseDir.path,
         'workingDir': directories.workingDir.path,
         'tempDir': directories.tempDir.path,
-        'grpcPort': portFront,
+        'grpcPort': fixedPortFront,
         'mode': mode,
         'debug': debug,
       });
       _applyNativeStatusPayload(setupResult);
-      if (!await waitUntilPort(portFront, true, null)) {
+      portFront = await _grpcPort(1, fixedPortFront);
+      if (portFront <= 0 || !await waitUntilPort(portFront, true, null)) {
         return 'failed to start foreground gRPC';
       }
     } else if (Platform.isIOS) {
@@ -145,10 +181,20 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
     }
 
     // Tunnel can outlive the Flutter process; treat a live bg port as available.
-    if (await isPortOpen('127.0.0.1', portBack)) {
+    portBack = await _grpcPort(2, fixedPortBack);
+    if (portBack > 0 && portBack != fixedPortBack) _replaceBgChannel();
+    if (await _serverUp(portBack)) {
       _isBgClientAvailable = true;
     }
     return '';
+  }
+
+  /// A channel to the VPN service's control server on [portBack], which may have changed.
+  void _replaceBgChannel() {
+    final previous = _bgChannel;
+    _bgChannel = ClientChannel('127.0.0.1', port: portBack, options: ChannelOptions(credentials: _credentials));
+    bgClient = CoreClient(_bgChannel!);
+    unawaited(previous?.shutdown());
   }
 
   void _applyNativeStatusPayload(dynamic payload) {
@@ -191,7 +237,7 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
     await methodChannel.invokeMethod('start', {
       'path': path,
       'name': name,
-      'grpcPort': portBack,
+      'grpcPort': fixedPortBack,
       'startBg': true,
       'debug': _debug,
     });
@@ -218,7 +264,13 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
     }
     loggy.info('Waiting for starting core finished after ${DateTime.now().difference(waitingSince).inMilliseconds}ms');
 
-    if (!await waitUntilPort(portBack, true, null)) {
+    // the VPN service's control server took a free port this time
+    final port = await _grpcPort(2, fixedPortBack);
+    if (port > 0 && port != portBack) {
+      portBack = port;
+      _replaceBgChannel();
+    }
+    if (portBack <= 0 || !await waitUntilPort(portBack, true, null)) {
       await stopMethodChannel();
       return const CoreStatus.stopped(alert: CoreAlert.startService, message: 'starting background core...');
     }
@@ -234,7 +286,9 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
     // MethodChannel stop already waits until the VPN service reports Stopped
     // (after Mobile.close), so only briefly poll the gRPC port.
     await stopMethodChannel();
-    if (!await isPortOpen('127.0.0.1', portBack)) {
+    // the hardened core reports 0 once its VPN-service server is closed: nothing to probe then
+    if (await _hardened()) portBack = await _grpcPort(2, fixedPortBack);
+    if (!await _serverUp(portBack)) {
       _isBgClientAvailable = false;
       return true;
     }
@@ -268,14 +322,10 @@ class CoreInterfaceMobile extends CoreInterface with InfraLogger {
   }
 
   @override
-  Future<bool> isActiveFg() async {
-    return await isPortOpen('127.0.0.1', portFront);
-  }
+  Future<bool> isActiveFg() => _serverUp(portFront);
 
   @override
-  Future<bool> isActiveBg() async {
-    return await isPortOpen('127.0.0.1', portBack);
-  }
+  Future<bool> isActiveBg() => _serverUp(portBack);
 }
 
 Future<bool> waitUntilPort(

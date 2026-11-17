@@ -109,11 +109,14 @@ Root: HKLM; Subkey: "Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags
 [Run]
 ; shellexec: the app starts through ShellExecuteEx, as from Explorer. Should the app still need
 ; elevation (a compatibility layer, a policy), Windows prompts for it instead of CreateProcess
-; failing with error 740.
-Filename: "{app}\{{EXECUTABLE_NAME}}"; Description: "{cm:LaunchProgram,{{DISPLAY_NAME}}}"; Flags: {% if PRIVILEGES_REQUIRED == 'admin' %}runascurrentuser{% endif %} shellexec nowait postinstall skipifsilent
+; failing with error 740. Never runascurrentuser, even for an install as administrator: a postinstall
+; entry runs as the user who started Setup by default, and the app must not run elevated (above).
+Filename: "{app}\{{EXECUTABLE_NAME}}"; Description: "{cm:LaunchProgram,{{DISPLAY_NAME}}}"; Flags: shellexec nowait postinstall skipifsilent
 
 [UninstallDelete]
-Type: filesandordirs; Name: "{userappdata}\Hiddify"
+; The app's data: %APPDATA%\<CompanyName>\<ProductName> of windows\runner\Runner.rc (path_provider).
+; Never {userappdata}\Hiddify, which is upstream Hiddify's, installed beside it on the same PC.
+Type: filesandordirs; Name: "{userappdata}\Sandpiper"
 
 [Code]
 // Stop/remove services via the Service Control Manager API.
@@ -136,7 +139,11 @@ const
   SERVICE_QUERY_STATUS = $0004;
   SERVICE_STOP = $0020;
   SERVICE_CONTROL_STOP = $0001;
+  SERVICE_STOPPED = $0001;
   DELETE_ACCESS = $10000;
+  // The elevated service hiddify-core installs (HiddifyAdminBG, the same name in every build of
+  // Hiddify and of this fork) runs the HiddifyAdmin.exe it was installed from.
+  ADMIN_SERVICE = 'HiddifyAdminBG';
 
 function OpenSCManager(lpMachineName, lpDatabaseName: string; dwDesiredAccess: DWORD): THandle;
   external 'OpenSCManagerW@advapi32.dll stdcall';
@@ -148,12 +155,15 @@ function DeleteService(hService: THandle): Boolean;
   external 'DeleteService@advapi32.dll stdcall';
 function CloseServiceHandle(hSCObject: THandle): Boolean;
   external 'CloseServiceHandle@advapi32.dll stdcall';
+function QueryServiceStatus(hService: THandle; var lpServiceStatus: TServiceStatus): Boolean;
+  external 'QueryServiceStatus@advapi32.dll stdcall';
 
 procedure StopServiceByName(const ServiceName: string; const Remove: Boolean);
 var
   hSCM, hService: THandle;
   Access: DWORD;
   Status: TServiceStatus;
+  I: Integer;
 begin
   hSCM := OpenSCManager('', '', SC_MANAGER_CONNECT);
   if hSCM = 0 then
@@ -166,7 +176,16 @@ begin
   hService := OpenService(hSCM, ServiceName, Access);
   if hService <> 0 then
   begin
-    ControlService(hService, SERVICE_CONTROL_STOP, Status);
+    // up to 10 s for the service to exit, so its files can be replaced or deleted
+    if ControlService(hService, SERVICE_CONTROL_STOP, Status) then
+      for I := 1 to 100 do
+      begin
+        if not QueryServiceStatus(hService, Status) then
+          Break;
+        if Status.dwCurrentState = SERVICE_STOPPED then
+          Break;
+        Sleep(100);
+      end;
     if Remove then
       DeleteService(hService);
     CloseServiceHandle(hService);
@@ -175,11 +194,31 @@ begin
   CloseServiceHandle(hSCM);
 end;
 
-function InitializeSetup(): Boolean;
+// Whether the service runs a program from this app's folder: a service upstream Hiddify installed
+// beside this app (the same name, its own folder) is never stopped or removed by this setup.
+function ServiceRunsFromApp(const ServiceName: string): Boolean;
+var
+  ImagePath: string;
 begin
-  // Current elevated core service — stop only so binaries can be replaced on upgrade.
-  StopServiceByName('HiddifyAdminBG', False);
-  // Legacy name from older builds — stop and remove if still present.
-  StopServiceByName('HiddifyTunnelService', True);
-  Result := True;
+  Result := False;
+  if RegQueryStringValue(HKLM, 'SYSTEM\CurrentControlSet\Services\' + ServiceName, 'ImagePath', ImagePath) then
+    Result := Pos(Lowercase(AddBackslash(ExpandConstant('{app}'))), Lowercase(ImagePath)) > 0;
+end;
+
+// Before the files are checked and replaced: this app's service is stopped so its binaries can be
+// replaced on upgrade (it was stopped whatever it ran, upstream Hiddify's VPN included, and
+// Hiddify's legacy HiddifyTunnelService was removed; this app never installed that one).
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  if ServiceRunsFromApp(ADMIN_SERVICE) then
+    StopServiceByName(ADMIN_SERVICE, False);
+  Result := '';
+end;
+
+// B-02: the uninstaller removes this app's service. Left behind, it was a SYSTEM service started
+// at every boot from a folder that no longer exists (and could be made again).
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if (CurUninstallStep = usUninstall) and ServiceRunsFromApp(ADMIN_SERVICE) then
+    StopServiceByName(ADMIN_SERVICE, True);
 end;

@@ -19,14 +19,22 @@ class WindowsProtocolHandler extends ProtocolHandler {
 
     final prefix = _regPrefix(scheme);
     final capitalized = scheme[0].toUpperCase() + scheme.substring(1);
-    final args = getArguments(arguments).map((a) => _sanitize(a));
-    final cmd = '$exe ${args.join(' ')}';
+    final cmd = command(exe, arguments);
 
     if (_regGetString(_hive, '$prefix\\shell\\open\\command', '') == cmd) return;
 
     _regCreateStringKey(_hive, prefix, '', 'URL:$capitalized');
     _regCreateStringKey(_hive, prefix, 'URL Protocol', '');
     _regCreateStringKey(_hive, '$prefix\\shell\\open\\command', '', cmd);
+  }
+
+  /// The handler's command line. B-08: the executable's path in quotes: unquoted, a path with a
+  /// space (C:\Program Files\...) lets Windows try C:\Program.exe first. A handler an older build
+  /// wrote differs from it, so [register] rewrites it once.
+  @visibleForTesting
+  String command(String exe, List<String>? arguments) {
+    final args = getArguments(arguments).map((a) => _sanitize(a));
+    return '"$exe" ${args.join(' ')}';
   }
 
   @override

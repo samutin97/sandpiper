@@ -7,7 +7,6 @@ enum Environment {
   prod,
   dev;
 
-  static const sentryDSN = String.fromEnvironment("sentry_dsn");
 
   // The commit this build was made from, 7 characters (the Makefile sets it); empty in a build
   // made without it, such as `flutter run`
@@ -33,7 +32,10 @@ enum Release {
 
   /// The app finds and installs its own updates only outside a store: a store updates its apps
   /// itself, and does not allow an app to offer another way.
-  bool get allowCustomUpdateChecker => this == general;
+  ///
+  /// The fork never does: it asks GitHub for no releases, and updates are installed by hand (an
+  /// update from upstream would not install over it anyway, it is signed by another key).
+  bool get allowCustomUpdateChecker => false;
 
   /// The release of this build: what it was built as, else what it runs as. An iOS app is updated
   /// by the store that installed it (or the way it was sideloaded), never by the app; an MSIX

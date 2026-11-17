@@ -20,7 +20,16 @@ class LanSharingPreferenceWidget extends ConsumerWidget {
     final enabled = ref.watch(ConfigOptions.allowConnectionFromLan);
 
     // every install has a secret (PreferencesVersion4Migration); one the user removed stays removed
-    Future<void> setEnabled(bool value) => ref.read(ConfigOptions.allowConnectionFromLan.notifier).update(value);
+    // H-06: sharing opens a port to the whole local network: said, and asked, before it opens
+    Future<void> setEnabled(bool value) async {
+      if (value) {
+        final confirmed = await ref
+            .read(dialogNotifierProvider.notifier)
+            .showConfirmation(title: t.fork.localProxy.lanTitle, message: t.fork.localProxy.lanMsg);
+        if (!confirmed) return;
+      }
+      await ref.read(ConfigOptions.allowConnectionFromLan.notifier).update(value);
+    }
 
     return ListTile(
       leading: showLeading ? const Icon(Icons.share_rounded, size: 28) : null,

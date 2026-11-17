@@ -7,7 +7,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hiddify/core/analytics/analytics_controller.dart';
-import 'package:hiddify/core/http_client/dio_http_client.dart';
 import 'package:hiddify/core/localization/locale_preferences.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
@@ -68,10 +67,8 @@ class IntroPage extends HookConsumerWidget with PresLogger {
 
     final isStarting = useState(false);
 
-    if (!locationInfoLoaded) {
-      autoSelectRegion(ref).then((value) => loggy.debug("Auto Region selection finished!"));
-      locationInfoLoaded = true;
-    }
+    // the fork: the region is Russia unless the user picks another, and the language stays the
+    // system's; nothing is guessed from the time zone (autoSelectRegion is not called)
 
     // for focus management
     final focusStates = <String, ValueNotifier<bool>>{
@@ -142,7 +139,6 @@ class IntroPage extends HookConsumerWidget with PresLogger {
                       await _setRegion(ref, region);
                     },
                   ),
-                  const EnableAnalyticsPrefTile(),
                   const Gap(24),
                   Focus(
                     focusNode: focusNodes[IntroConst.termsAndConditionsKey],
@@ -247,34 +243,12 @@ class IntroPage extends HookConsumerWidget with PresLogger {
       if (_regionChosenByUser) return;
       await _setRegion(ref, regionLocale.region);
       await ref.read(localePreferencesProvider.notifier).changeLocale(regionLocale.locale);
-      return;
     } catch (e) {
       loggy.warning('Could not get the local country code based on timezone', e);
     }
 
-    try {
-      final DioHttpClient client = DioHttpClient(
-        timeout: const Duration(seconds: 2),
-        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0",
-        debug: true,
-      );
-      final response = await client.get<Map<String, dynamic>>('https://api.ip.sb/geoip/');
-
-      if (response.statusCode == 200) {
-        final jsonData = response.data!;
-        final regionLocale = _getRegionLocale(jsonData['country_code']?.toString() ?? "");
-
-        loggy.debug('Region: ${regionLocale.region} Locale: ${regionLocale.locale}');
-        // the answer can come seconds later, after the user picked a region
-        if (_regionChosenByUser) return;
-        await _setRegion(ref, regionLocale.region);
-        await ref.read(localePreferencesProvider.notifier).changeLocale(regionLocale.locale);
-      } else {
-        loggy.warning('Request failed with status: ${response.statusCode}');
-      }
-    } catch (e) {
-      loggy.warning('Could not get the local country code from ip');
-    }
+    // no fallback to an IP service: it would tell a third party, directly, that the device starts a
+    // VPN client
   }
 
   RegionLocale _getRegionLocale(String country) {

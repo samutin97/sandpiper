@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/optional_range.dart';
+import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
+import 'package:hiddify/features/settings/widget/dpi_probe_dialog.dart';
 import 'package:hiddify/features/settings/widget/preference_tile.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -26,6 +28,37 @@ class TlsTricksPage extends HookConsumerWidget {
       appBar: AppBar(title: Text(t.pages.settings.tlsTricks.title)),
       body: ListView(
         children: [
+          // P21: a ClientHello that fits one TCP segment, for TLS that is not REALITY
+          SwitchListTile.adaptive(
+            title: Text(t.fork.tls.compact),
+            subtitle: Text(t.fork.tls.compactMsg),
+            secondary: const Icon(Icons.compress_rounded),
+            value: ref.watch(ConfigOptions.tlsKeyShare) == 'classical',
+            onChanged: (value) => ref.read(ConfigOptions.tlsKeyShare.notifier).update(value ? 'classical' : ''),
+          ),
+          // P2: TLS without a certificate check only when the user allows it, warned first
+          SwitchListTile.adaptive(
+            title: Text(t.fork.tls.insecure),
+            subtitle: Text(t.fork.tls.insecureMsg),
+            secondary: const Icon(Icons.gpp_maybe_rounded),
+            value: ref.watch(ConfigOptions.allowInsecure),
+            onChanged: (value) async {
+              if (value &&
+                  !await ref
+                      .read(dialogNotifierProvider.notifier)
+                      .showConfirmation(title: t.fork.tls.insecure, message: t.fork.tls.insecureWarning)) {
+                return;
+              }
+              await ref.read(ConfigOptions.allowInsecure.notifier).update(value);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.troubleshoot_rounded),
+            title: Text(t.fork.dpiProbe.title),
+            subtitle: Text(t.fork.dpiProbe.tile),
+            onTap: () => showDialog<void>(context: context, builder: (_) => const DpiProbeDialog()),
+          ),
+          const Divider(),
           SwitchListTile.adaptive(
             title: Text(t.pages.settings.tlsTricks.enable),
             value: ref.watch(ConfigOptions.enableTlsFragment),

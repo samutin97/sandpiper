@@ -154,7 +154,7 @@ final class TunnelServiceController {
         }
         let request: [String: Any] = [
             "configContent": configContent,
-            "configName": arguments["configName"] as? String ?? "Hiddify",
+            "configName": arguments["configName"] as? String ?? "Sandpiper",
             "settingsJSON": settingsJSON,
             "resources": resources,
             "disableMemoryLimit": arguments["disableMemoryLimit"] as? Bool ?? false,

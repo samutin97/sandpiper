@@ -8,6 +8,7 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/auto_start/notifier/auto_start_notifier.dart';
 import 'package:hiddify/features/common/general_pref_tiles.dart';
+import 'package:hiddify/features/settings/data/android_security.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/widget/preference_tile.dart';
 import 'package:hiddify/hiddifycore/core_interface/core_interface_mobile.dart';
@@ -28,7 +29,6 @@ class GeneralPage extends HookConsumerWidget {
         children: [
           const LocalePrefTile(),
           const ThemeModePrefTile(),
-          const EnableAnalyticsPrefTile(),
           SwitchListTile.adaptive(
             title: Text(t.pages.settings.general.reduceAnimations),
             subtitle: Text(t.pages.settings.general.reduceAnimationsMsg),
@@ -42,7 +42,32 @@ class GeneralPage extends HookConsumerWidget {
             secondary: const Icon(Icons.flag_rounded),
             onChanged: ref.read(Preferences.autoCheckIp.notifier).update,
           ),
+          SwitchListTile.adaptive(
+            title: Text(t.fork.direct.settingTitle),
+            subtitle: Text(t.fork.direct.settingSubtitle),
+            secondary: const Icon(Icons.update_disabled_rounded),
+            value: ref.watch(Preferences.updateProfilesWithoutTunnel),
+            onChanged: ref.read(Preferences.updateProfilesWithoutTunnel.notifier).update,
+          ),
           if (PlatformUtils.isAndroid) ...[
+            SwitchListTile.adaptive(
+              title: Text(t.fork.secureScreen.title),
+              subtitle: Text(t.fork.secureScreen.subtitle),
+              secondary: const Icon(Icons.screenshot_monitor_rounded),
+              value: ref.watch(Preferences.secureScreen),
+              onChanged: ref.read(Preferences.secureScreen.notifier).update,
+            ),
+            ListTile(
+              title: Text(t.fork.killSwitch.title),
+              subtitle: Text(t.fork.killSwitch.subtitle),
+              leading: const Icon(Icons.shield_rounded),
+              isThreeLine: true,
+              onTap: () async {
+                if (!await openSystemVpnSettings()) {
+                  await ref.read(dialogNotifierProvider.notifier).showCustomAlert(message: t.fork.killSwitch.subtitle);
+                }
+              },
+            ),
             SwitchListTile.adaptive(
               title: Text(t.pages.settings.general.dynamicNotification),
               secondary: const Icon(Icons.speed_rounded),
@@ -142,15 +167,17 @@ class GeneralPage extends HookConsumerWidget {
             leading: const Icon(Icons.speed_rounded),
             onTap: () => ref.read(dialogNotifierProvider.notifier).showSpeedTest(start: false),
           ),
-          ValuePreferenceWidget(
-            value: ref.watch(ConfigOptions.clashApiPort),
-            preferences: ref.watch(ConfigOptions.clashApiPort.notifier),
-            title: t.pages.settings.general.clashApiPort,
-            icon: Icons.api_rounded,
-            validateInput: isPort,
-            digitsOnly: true,
-            inputToValue: int.tryParse,
-          ),
+          // M-01: no Clash API port on phones (the core opens none there); desktop only
+          if (PlatformUtils.isDesktop)
+            ValuePreferenceWidget(
+              value: ref.watch(ConfigOptions.clashApiPort),
+              preferences: ref.watch(ConfigOptions.clashApiPort.notifier),
+              title: t.pages.settings.general.clashApiPort,
+              icon: Icons.api_rounded,
+              validateInput: isPort,
+              digitsOnly: true,
+              inputToValue: int.tryParse,
+            ),
           if (Platform.isMacOS || Platform.isIOS || Platform.isWindows)
             SwitchListTile.adaptive(
               title: Text(t.pages.settings.general.useSystemTlsEngine),

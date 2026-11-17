@@ -1,9 +1,15 @@
-app_id: 6L903538-42B1-4596-G479-BJ779F21A65D
-publisher_name: Hiddify
-publisher_url: https://github.com/hiddify/hiddify-app
-display_name: Hiddify
+# Sandpiper's own AppId: with upstream's, this setup took an installed Hiddify for an older version
+# of itself (it upgraded or removed it, and shared its entry in Settings > Apps).
+app_id: AE4352BE-CF22-4E12-A996-6C30E5CD28FD
+publisher_name: Sandpiper
+# No publisher_url: Settings > Apps shows it to every program (the uninstall key), and the credit to
+# Hiddify is in the README and the About page.
+display_name: Sandpiper
 create_desktop_icon: true
-install_dir_name: "{autopf64}\\Hiddify"
+install_dir_name: "{autopf64}\\Sandpiper"
+# B-02: Program Files only. A per-user install ({localappdata}\Programs, writable by every program of
+# the user) let the SYSTEM service run binaries any of them could replace.
+privileges_required: admin
 setup_icon_file: windows\runner\resources\app_icon.ico
 # The first locale is the setup's language when Windows' UI language matches none.
 locales:

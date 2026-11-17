@@ -1,25 +1,27 @@
-# Must equal a name reserved for the product in Partner Center (Product identity).
-display_name: Hiddify ProxyVPN
-publisher_display_name: Hiddify
-identity_name: Hiddify.App.Win
+# Sandpiper's own package identity, never upstream's Microsoft Store one (Hiddify ProxyVPN,
+# Hiddify.App.Win, Hiddify's Partner Center publisher): the fork is not in the Store, and an MSIX
+# of it is sideloaded with a certificate trusted on each PC.
+display_name: Sandpiper
+publisher_display_name: Sandpiper
+identity_name: Sandpiper.App.Win
 msix_version: 5.9.8.0
 logo_path: windows\runner\resources\app_icon.ico
 capabilities: internetClient, internetClientServer, privateNetworkClientServer
 languages: ar, en-us, es-es, fa-ir, fr-fr, id-id, pt-br, ru-ru, tr-tr, zh-cn, zh-tw
-protocol_activation: hiddify, v2ray, v2rayn, v2rayng, clash, clashmeta, sing-box
-execution_alias: hiddify
-# identity_name and publisher must equal Partner Center > Product identity. CI keeps
-# both as they are and signs the MSIX with a certificate whose Subject equals
-# `publisher` (windows/scripts/configure_windows_signing.ps1 checks it).
+# H-04: one scheme, sandpiper:// (LinkParser.protocols); no hiddify, v2ray*, clash*, sing-box links
+protocol_activation: sandpiper
+execution_alias: sandpiper
+# The package is signed with a certificate whose Subject equals `publisher`
+# (windows/scripts/configure_windows_signing.ps1 checks it).
 certificate_path: windows\sign.pfx
 certificate_password:
-publisher: CN=8CB43675-F44B-4AA5-9372-E8727781BDC4
+publisher: CN=Sandpiper
 install_certificate: "false"
 enable_at_startup: "true"
 startup_task:
   parameters: --autostart
 
 # For testing with a self-signed certificate
-# publisher: CN=Hiddify-Test
+# publisher: CN=Sandpiper-Test
 # certificate_password: "1234"
 # install_certificate: "true"

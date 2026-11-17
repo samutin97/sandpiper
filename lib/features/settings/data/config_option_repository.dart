@@ -5,9 +5,11 @@ import 'package:flutter/foundation.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/model/optional_range.dart';
 import 'package:hiddify/core/model/region.dart';
+import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/utils/exception_handler.dart';
 import 'package:hiddify/core/utils/json_converters.dart';
 import 'package:hiddify/core/utils/preferences_utils.dart';
+import 'package:hiddify/features/app_based_routing/model/per_app_proxy_mode.dart';
 import 'package:hiddify/features/log/model/log_level.dart';
 import 'package:hiddify/features/profile/data/profile_parser.dart';
 import 'package:hiddify/features/route_rules/notifier/rules_notifier.dart';
@@ -36,16 +38,20 @@ abstract class ConfigOptions {
     mapTo: (value) => value.key,
   );
 
+  // M-08: the fastest proxy, kept; not round-robin over all of them (each new connection on another
+  // proxy and protocol to the same server is a pattern of its own)
   static final defaultProxy = PreferencesNotifier.create<DefaultProxy, String>(
     "default-proxy",
-    DefaultProxy.balance,
+    DefaultProxy.lowest,
     mapFrom: (value) => DefaultProxy.values.firstWhere((e) => e.key == value, orElse: () => DefaultProxy.balance),
     mapTo: (value) => value.key,
   );
 
+  // the fork's users are in Russia: Russian sites go directly by default (the language follows the
+  // system, not the region)
   static final region = PreferencesNotifier.create<Region, String>(
     "region",
-    Region.other,
+    Region.ru,
     mapFrom: Region.values.byName,
     mapTo: (value) => value.name,
   );
@@ -91,11 +97,18 @@ abstract class ConfigOptions {
     mapTo: (value) => value.key,
   );
 
+  /// Yandex's DNS over HTTPS: an option, never the default (it would add a third party).
+  static const directDnsRussia = "https://common.dot.dns.yandex.net/dns-query";
+
+  /// M-03: the resolver of the domains that go directly (Russian sites): the system's (Android's
+  /// resolver, with Private DNS when set), so no third party is added; the provider sees these names
+  /// anyway. Never plain UDP to a public resolver as upstream (udp://1.1.1.1).
   static final directDnsAddress = PreferencesNotifier.create<String, String>(
     "direct-dns-address",
-    "udp://1.1.1.1",
+    "local",
     possibleValues: List.of([
       "local",
+      directDnsRussia,
       "udp://223.5.5.5",
       "udp://1.1.1.1",
       "udp://1.1.1.2",
@@ -105,7 +118,21 @@ abstract class ConfigOptions {
       "4.4.2.2",
       "8.8.8.8",
     ]),
-    defaultValueFunction: (ref) => ref.read(region) == Region.cn ? "223.5.5.5" : "1.1.1.1",
+    defaultValueFunction: (ref) => ref.read(region) == Region.cn ? "223.5.5.5" : "local",
+    validator: (value) => value.isNotBlank,
+  );
+
+  /// The resolvers of the VPN servers' names only (hardened core: server-dns-address), in order, the
+  /// system resolver last: DNS over HTTPS addressed by IP, so no plain query goes before them -
+  /// Cloudflare, then Quad9 (HTTP/2), then Google. A server given by IP address is not looked up at
+  /// all (sing-box resolves only domains, common/dialer/resolve.go). The official core ignores it and
+  /// resolves the names with the direct resolver.
+  static const defaultServerDns = "https://1.1.1.1/dns-query,https://9.9.9.9/dns-query,https://8.8.8.8/dns-query";
+
+  static final serverDnsAddress = PreferencesNotifier.create<String, String>(
+    "server-dns-address",
+    defaultServerDns,
+    possibleValues: List.of([defaultServerDns, directDnsRussia, "local"]),
     validator: (value) => value.isNotBlank,
   );
 
@@ -154,10 +181,17 @@ abstract class ConfigOptions {
 
   static final strictRoute = PreferencesNotifier.create<bool, bool>("strict-route", true);
 
+  /// M-08: one HTTPS address. The one Android itself checks connectivity with (AOSP NetworkMonitor,
+  /// CAPTIVE_PORTAL_HTTPS_URL = https://www.google.com/generate_204): every Android phone asks it all
+  /// day, so it tells nothing about a VPN client. Only through the tunnel (the core never tests the
+  /// direct exit); plain http (captive.apple.com) was readable on the way.
+  static const defaultConnectionTestUrl = "https://www.google.com/generate_204";
+
   static final connectionTestUrl = PreferencesNotifier.create<String, String>(
     "connection-test-url",
-    "http://captive.apple.com/hotspot-detect.html",
+    defaultConnectionTestUrl,
     possibleValues: List.of([
+      defaultConnectionTestUrl,
       "http://connectivitycheck.gstatic.com/generate_204",
       "http://www.gstatic.com/generate_204",
       "https://www.gstatic.com/generate_204",
@@ -172,9 +206,10 @@ abstract class ConfigOptions {
     validator: (value) => value.isNotBlank && isUrl(value),
   );
 
+  // M-08: every 30 minutes, not 10: fewer bursts of handshakes to the servers
   static final urlTestInterval = PreferencesNotifier.create<Duration, int>(
     "url-test-interval",
-    const Duration(minutes: 10),
+    const Duration(minutes: 30),
     mapFrom: const IntervalInSecondsConverter().fromJson,
     mapTo: const IntervalInSecondsConverter().toJson,
   );
@@ -192,6 +227,14 @@ abstract class ConfigOptions {
     mapFrom: (value) =>
         SpeedTestDirection.values.firstWhere((e) => e.name == value, orElse: () => SpeedTestDirection.upload),
     mapTo: (value) => value.name,
+  );
+
+  /// The base URL of the region and block rule sets (https only), downloaded by the core through the
+  /// tunnel; empty for upstream's hiddify-geo. Meant for lists built and served by the user's own server.
+  static final ruleSetSource = PreferencesNotifier.create<String, String>(
+    "rule-set-source",
+    "",
+    validator: (value) => value.isEmpty || value.startsWith('https://'),
   );
 
   static final enableClashApi = PreferencesNotifier.create<bool, bool>("enable-clash-api", true);
@@ -216,12 +259,29 @@ abstract class ConfigOptions {
     validator: (value) => isPort(value.toString()),
   );
 
-  /// Whether the local port asks for the secret too; off by default, as browsers can not send a
-  /// SOCKS5 password. Never as the system proxy, which can not pass one.
-  static final localProxyAuth = PreferencesNotifier.create<bool, bool>("local-proxy-auth", false);
+  /// Whether the local port asks for the secret too. On by default on the desktop (B-03): any program
+  /// of the user finds a loopback port and, through it, the server's exit address; a browser takes
+  /// an HTTP proxy with a user and password. Phones always ask (H-06). Never as the system proxy,
+  /// which can not pass one: both cores leave its own listener without a password, whatever this says.
+  static final localProxyAuth = PreferencesNotifier.create<bool, bool>(
+    "local-proxy-auth",
+    false,
+    defaultValueFunction: (_) => PlatformUtils.isDesktop,
+  );
 
   /// Whether the local port stays open in VPN mode, where every app already goes through the VPN.
+  /// Never on phones (H-06): the hardened core ignores it there, and the app sends false.
   static final localProxyInVpn = PreferencesNotifier.create<bool, bool>("local-proxy-in-vpn", false);
+
+  /// H-06: the local proxy's user, made once per install (ForkVersion1Migration). The hardened core
+  /// asks for it and for the secret on every local and LAN port of a phone.
+  static final localProxyUsername = PreferencesNotifier.create<String, String>("local-proxy-username", "");
+
+  /// SOCKS5 UDP ASSOCIATE on the local proxy: off, a password does not protect the UDP relay.
+  static final localProxyUdp = PreferencesNotifier.create<bool, bool>("local-proxy-udp", false);
+
+  /// P26: the seed of the TUN addresses, made once per install (ForkVersion1Migration).
+  static final tunAddressSeed = PreferencesNotifier.create<String, String>("tun-address-seed", "");
 
   /// Whether picking proxy mode no longer shows how apps are pointed at it; the home page's Manual
   /// tab still does.
@@ -267,6 +327,14 @@ abstract class ConfigOptions {
   );
 
   static final enableMux = PreferencesNotifier.create<bool, bool>("enable-mux", false);
+
+  /// P2 (hardened core): nodes whose TLS checks no certificate (insecure=1 without a pinned
+  /// certificate) are dropped unless the user allows them here, warned.
+  static final allowInsecure = PreferencesNotifier.create<bool, bool>("allow-insecure", false);
+
+  /// P21 (hardened core): "classical" sends a ClientHello without the post-quantum key share (it fits
+  /// in one TCP segment) for TLS that is not REALITY; "" keeps the fingerprint's (X25519MLKEM768).
+  static final tlsKeyShare = PreferencesNotifier.create<String, String>("tls-key-share", "");
 
   static final muxPadding = PreferencesNotifier.create<bool, bool>("mux-padding", false);
 
@@ -614,6 +682,7 @@ abstract class ConfigOptions {
       remoteDnsAddress: ref.watch(remoteDnsAddress),
       remoteDnsDomainStrategy: ref.watch(remoteDnsDomainStrategy),
       directDnsAddress: ref.watch(directDnsAddress),
+      serverDnsAddress: ref.watch(serverDnsAddress),
       directDnsDomainStrategy: ref.watch(directDnsDomainStrategy),
       mixedPort: ref.watch(mixedPort),
       tproxyPort: ref.watch(tproxyPort),
@@ -638,8 +707,26 @@ abstract class ConfigOptions {
       allowConnectionFromLan: ref.watch(allowConnectionFromLan),
       lanSharingPassword: ref.watch(lanSharingPassword),
       lanSharingPort: ref.watch(lanSharingPort),
-      localProxyAuth: ref.watch(localProxyAuth),
-      localProxyInVpn: ref.watch(localProxyInVpn),
+      // H-06: on phones the local proxy always asks for the user and the secret, and never stays open
+      // in VPN mode, whatever an older setting says
+      localProxyAuth: PlatformUtils.isMobile || ref.watch(localProxyAuth),
+      localProxyInVpn: !PlatformUtils.isMobile && ref.watch(localProxyInVpn),
+      localProxyUsername: ref.watch(localProxyUsername),
+      localProxyPassword: ref.watch(lanSharingPassword),
+      localProxyUdp: ref.watch(localProxyUdp),
+      tunAddressSeed: ref.watch(tunAddressSeed),
+      allowInsecure: ref.watch(allowInsecure),
+      tlsKeyShare: ref.watch(tlsKeyShare),
+      perAppProxyMode: switch (ref.watch(Preferences.perAppProxyModeInUse)) {
+        AppProxyMode.include => 'include',
+        AppProxyMode.exclude => 'exclude',
+        null => 'off',
+      },
+      perAppProxyList: switch (ref.watch(Preferences.perAppProxyModeInUse)) {
+        AppProxyMode.include => ref.watch(Preferences.includeApps),
+        AppProxyMode.exclude => ref.watch(Preferences.excludeApps),
+        null => const <String>[],
+      },
       enableFakeDns: ref.watch(enableFakeDns),
       // enableDnsRouting: ref.watch(enableDnsRouting),
       independentDnsCache: ref.watch(independentDnsCache),

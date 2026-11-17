@@ -8,6 +8,7 @@ import 'package:hiddify/core/preferences/preferences_provider.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
+import 'package:hiddify/features/profile/notifier/tunnel_guard.dart';
 import 'package:hiddify/utils/custom_loggers.dart';
 import 'package:meta/meta.dart';
 import 'package:neat_periodic_task/neat_periodic_task.dart';
@@ -61,6 +62,8 @@ class ForegroundProfilesUpdateNotifier extends _$ForegroundProfilesUpdateNotifie
   bool _forceNextRun = false;
 
   Future<void> trigger() async {
+    // an update by hand: asks before it goes around the tunnel (H-02)
+    if (!await confirmRequestOutsideTunnel(ref)) return;
     loggy.debug("triggering update");
     _forceNextRun = true;
     await _scheduler?.trigger();
@@ -110,6 +113,11 @@ class ForegroundProfilesUpdateNotifier extends _$ForegroundProfilesUpdateNotifie
 
       if (!force && previousRun != null && previousRun.add(interval) > DateTime.now()) {
         loggy.debug("too soon! previous run: [$previousRun]");
+        return;
+      }
+      // H-02: on their own, subscriptions update only through the tunnel, unless the user allowed it
+      if (!force && !appTrafficTunneled(ref) && !ref.read(Preferences.updateProfilesWithoutTunnel)) {
+        loggy.debug("not through the tunnel now, the update waits for the VPN");
         return;
       }
       loggy.debug("${force ? "[FORCED] " : ""}running, previous run: [$previousRun]");

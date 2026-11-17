@@ -13,8 +13,11 @@ abstract class LinkParser {
     return uri.replace(fragment: name).toString();
   }
 
-  // protocols schemas
-  static const protocols = ['hiddify', 'v2ray', 'v2rayn', 'v2rayng', 'clash', 'clashmeta', 'sing-box'];
+  /// The app's own link scheme: `sandpiper://import/<url>` or `sandpiper://import?url=<url>`, with
+  /// the name in `name=` or the fragment. The schemes of other clients (v2ray, clash, sing-box ...)
+  /// are not registered: an app can find which apps handle a scheme without any permission.
+  static const scheme = 'sandpiper';
+  static const protocols = [scheme];
 
   static ProfileLink? parse(String link) {
     return simple(link) ?? deep(link);
@@ -29,22 +32,14 @@ abstract class LinkParser {
   static ProfileLink? deep(String link) {
     final uri = Uri.tryParse(link.trim());
     if (uri == null || !uri.hasScheme || !uri.hasAuthority) return null;
+    if (uri.scheme != scheme || uri.host != 'import') return null;
     final queryParams = uri.queryParameters;
-    switch (uri.scheme) {
-      case 'hiddify':
-        if (queryParams.containsKey('url')) {
-          // Doc form: hiddify://install-config?url=<uri>#<name> — the name lives
-          // in the fragment. Prefer an explicit `name=` param, else the fragment.
-          final name = (queryParams['name']?.isNotEmpty ?? false) ? queryParams['name']! : uri.fragment;
-          return (url: queryParams['url']!, name: name);
-        } else {
-          return (url: uri.path.substring(1) + (uri.hasQuery ? "?${uri.query}" : ""), name: uri.fragment);
-        }
-      case 'v2ray' || 'v2rayn' || 'v2rayng' || 'clash' || 'clashmeta' || 'sing-box':
-        return queryParams.containsKey('url') ? (url: queryParams['url']!, name: queryParams['name'] ?? '') : null;
-      default:
-        return null;
+    if (queryParams.containsKey('url')) {
+      final name = (queryParams['name']?.isNotEmpty ?? false) ? queryParams['name']! : uri.fragment;
+      return (url: queryParams['url']!, name: name);
     }
+    if (uri.path.length <= 1) return null;
+    return (url: uri.path.substring(1) + (uri.hasQuery ? "?${uri.query}" : ""), name: uri.fragment);
   }
 }
 

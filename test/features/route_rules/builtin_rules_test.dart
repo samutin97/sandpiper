@@ -442,7 +442,7 @@ void main() {
         routes: [
           GoRoute(
             path: '/',
-            builder: (context, state) => const RoutingOptionsPage(routeRule: null),
+            builder: (context, state) => const RoutingOptionsPage(),
             routes: [
               GoRoute(
                 path: 'rule/:orderId',

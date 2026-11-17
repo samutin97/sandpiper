@@ -1,22 +1,22 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/haptic/haptic_service.dart';
-import 'package:hiddify/core/http_client/http_client_provider.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/failures.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/profile/add/import_preview.dart';
 import 'package:hiddify/features/profile/add/model/free_profiles_model.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
 import 'package:hiddify/features/profile/data/profile_repository.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/model/profile_failure.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
+import 'package:hiddify/features/profile/notifier/tunnel_guard.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/utils/riverpod_utils.dart';
 import 'package:hiddify/utils/utils.dart';
@@ -39,9 +39,11 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
       final notification = ref.read(inAppNotificationControllerProvider);
       switch (next) {
         case AsyncData(value: final _?):
-          notification.showSuccessToast(t.pages.profiles.msg.save.success);
+          notification.showSuccessToast(lastImportActivated ? t.pages.profiles.msg.save.success : t.fork.import.added);
         case AsyncError(:final error):
-          if (error case ProfileInvalidUrlFailure()) {
+          if (error case ProfileInvalidUrlFailure(:final message?) when message.contains('https')) {
+            notification.showErrorToast(t.fork.import.insecureHttp);
+          } else if (error case ProfileInvalidUrlFailure()) {
             notification.showErrorToast(t.pages.profiles.msg.invalidUrl);
           } else if (error case ProfileCancelByUserFailure()) {
             return;
@@ -61,12 +63,33 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
   ProfileRepository get _profilesRepo => ref.read(profileRepositoryProvider).requireValue;
   CancelToken? _cancelToken;
 
-  Future<void> addClipboard(String rawInput) async {
+  /// Whether the last import selected the new profile (there was no profile selected before).
+  bool lastImportActivated = true;
+
+  /// Imports [rawInput] (a subscription link, links, or a config) from [source] (H-04): first a dialog
+  /// shows what it is and where it comes from, and nothing is downloaded before the user agrees. The
+  /// new profile is selected only when no profile is: an import never switches, nor reconnects, a
+  /// running tunnel. Subscriptions over http:// are refused.
+  Future<void> addClipboard(String rawInput, {required ImportSource source}) async {
     if (state.isLoading) return;
+    final preview = previewImport(rawInput);
+    final t = ref.read(translationsProvider).requireValue;
+    final dialogs = ref.read(dialogNotifierProvider.notifier);
+    if (preview.refusal == ImportRefusal.insecureHttp) {
+      await dialogs.showCustomAlert(title: t.fork.import.refusedTitle, message: t.fork.import.insecureHttp);
+      return;
+    }
+    final activate = await ref.read(activeProfileProvider.future) == null;
+    final tunneled = await appTrafficTunneledNow(ref);
+    final confirmed = await dialogs.showConfirmation(
+      title: t.fork.import.title,
+      message: importDialogMessage(t, preview, source, activate: activate, tunneled: tunneled),
+      positiveBtnTxt: t.fork.import.confirm,
+    );
+    if (!confirmed) return;
+    lastImportActivated = activate;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      // final activeProfile = await ref.read(activeProfileProvider.future);
-      // final markAsActive = activeProfile == null || ref.read(Preferences.markNewProfileActive);
       final TaskEither<ProfileFailure, Unit> task;
       if (LinkParser.parse(rawInput) case (final rs)?) {
         loggy.debug("adding remote profile");
@@ -74,11 +97,11 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
           rs.url,
           userOverride: rs.name.isNotEmpty ? UserOverride(name: rs.name) : null,
           cancelToken: _cancelToken = CancelToken(),
-          activate: true,
+          activate: activate,
         );
       } else {
         loggy.debug("adding profile, content");
-        task = _profilesRepo.addLocal(safeDecodeBase64(rawInput)).map((_) => unit);
+        task = _profilesRepo.addLocal(safeDecodeBase64(rawInput), activate: activate).map((_) => unit);
       }
       return await task
           .match(
@@ -95,16 +118,73 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
     });
   }
 
+  /// The import dialog's text: where the profile comes from, its name, its subscription or servers,
+  /// and what importing it does.
+  static String importDialogMessage(
+    Translations t,
+    ImportPreview preview,
+    ImportSource source, {
+    required bool activate,
+    required bool tunneled,
+  }) {
+    final lines = <String>[
+      t.fork.import.from(
+        source: switch (source) {
+          ImportSource.deepLink => t.fork.import.source.deepLink,
+          ImportSource.clipboard => t.fork.import.source.clipboard,
+          ImportSource.file => t.fork.import.source.file,
+          ImportSource.qrCode => t.fork.import.source.qrCode,
+          ImportSource.phone => t.fork.import.source.phone,
+        },
+      ),
+      if (preview.type case final type?) t.fork.import.type(type: type),
+      if (preview.name.isNotEmpty) t.fork.import.name(name: preview.name),
+      if (preview.remote) t.fork.import.subscription(url: 'https://${preview.host ?? ''}'),
+      if (!preview.remote && preview.servers.isNotEmpty)
+        t.fork.import.servers(
+          list: [
+            ...preview.servers,
+            if (preview.serverCount > preview.servers.length)
+              t.fork.import.more(n: preview.serverCount - preview.servers.length),
+          ].join(', '),
+        ),
+      '',
+      if (activate) t.fork.import.firstActivated else t.fork.import.notActivated,
+      if (preview.remote && !tunneled) t.fork.import.direct(host: preview.host ?? ''),
+    ];
+    return lines.join('\n');
+  }
+
   /// Adds all the files of a zip as one profile named [name]. The files are merged into one text that goes straight to
   /// the core, which decides which of them are valid configs.
   Future<void> addArchive(Uint8List zipBytes, {required String name}) async {
     if (state.isLoading) return;
+    final text = readZipText(zipBytes);
+    final t = ref.read(translationsProvider).requireValue;
+    final activate = await ref.read(activeProfileProvider.future) == null;
+    if (text.isNotEmpty) {
+      final preview = previewImport(text);
+      final confirmed = await ref
+          .read(dialogNotifierProvider.notifier)
+          .showConfirmation(
+            title: t.fork.import.title,
+            message: importDialogMessage(
+              t,
+              ImportPreview(name: name, remote: false, servers: preview.servers, serverCount: preview.serverCount),
+              ImportSource.file,
+              activate: activate,
+              tunneled: true,
+            ),
+            positiveBtnTxt: t.fork.import.confirm,
+          );
+      if (!confirmed) return;
+    }
+    lastImportActivated = activate;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
-      final text = readZipText(zipBytes);
       if (text.isEmpty) throw const ProfileFailure.invalidConfig();
       return await _profilesRepo
-          .addLocal(text, userOverride: UserOverride(name: name))
+          .addLocal(text, userOverride: UserOverride(name: name), activate: activate)
           .match(
             (err) {
               loggy.warning("failed to add profile from zip", err);
@@ -119,8 +199,11 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
     });
   }
 
+  /// A subscription the user typed in the app: selected right away, as before (no other app can do
+  /// this). Only https: the parser refuses http.
   Future<void> addManual({required String url, required UserOverride userOverride}) async {
     if (state.isLoading) return;
+    lastImportActivated = true;
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
       final task = _profilesRepo.upsertRemote(url, userOverride: userOverride, activate: true);
@@ -155,6 +238,8 @@ class UpdateProfileNotifier extends _$UpdateProfileNotifier with AppLogger {
 
   Future<void> updateProfile(RemoteProfileEntity profile, {bool isBulk = false}) async {
     if (state.isLoading) return;
+    // an update by hand asks before it goes around the tunnel; a bulk run checked already (H-02)
+    if (!isBulk && !await confirmRequestOutsideTunnel(ref)) return;
     _resetTimer?.cancel();
     state = const AsyncLoading();
     if (!isBulk) await ref.read(hapticServiceProvider.notifier).lightImpact();
@@ -222,16 +307,8 @@ enum AddProfilePages { options, manual }
 @riverpod
 class FreeProfilesNotifier extends _$FreeProfilesNotifier {
   @override
-  Future<List<FreeProfile>> build() async {
-    final httpClient = ref.watch(httpClientProvider);
-    final res = await httpClient.get(
-      'https://raw.githubusercontent.com/hiddify/hiddify-app/refs/heads/main/test.configs/free_configs',
-    );
-    if (res.statusCode == 200) {
-      return FreeProfilesModel.fromJson(jsonDecode(res.data.toString()) as Map<String, dynamic>).profiles;
-    }
-    return <FreeProfile>[];
-  }
+  // the fork offers no free profiles: nothing is downloaded from Hiddify's repository
+  Future<List<FreeProfile>> build() async => const <FreeProfile>[];
 }
 
 @riverpod

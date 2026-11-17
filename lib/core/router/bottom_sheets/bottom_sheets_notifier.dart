@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
-import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/router/bottom_sheets/widgets/quick_settings_modal.dart';
-import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/router/go_router/go_router_notifier.dart';
 import 'package:hiddify/features/app_based_routing/model/app_package_info.dart';
 import 'package:hiddify/features/app_based_routing/overview/app_list_share_modal.dart';
 import 'package:hiddify/features/connection/widget/connection_health_sheet.dart';
 import 'package:hiddify/features/log/overview/logs_modals.dart';
 import 'package:hiddify/features/profile/add/add_profile_modal.dart';
+import 'package:hiddify/features/profile/add/import_preview.dart';
 import 'package:hiddify/features/profile/overview/profiles_modal.dart';
-import 'package:hiddify/utils/link_parsers.dart';
 
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -46,31 +44,14 @@ class BottomSheetsNotifier extends _$BottomSheetsNotifier {
     });
   }
 
-  /// The host the deep link would actually fetch from, for the confirmation
-  /// message. [url] is the deep link itself (`hiddify://import/?url=...`), so
-  /// its own host is always `import` — unwrap it to the subscription link first.
-  String _deepLinkHost(String url) {
-    final target = LinkParser.parse(url)?.url ?? url;
-    final host = Uri.tryParse(target)?.host ?? '';
-    return host.isNotEmpty ? host : target;
-  }
-
+  /// Opens the add-profile sheet; with [url] (a deep link, or text pasted by the paste shortcut) it
+  /// imports that, after the import dialog shows what it is and where it comes from (H-04). Nothing
+  /// is downloaded before the user agrees.
   Future<void> showAddProfile({String? url, bool triggeredByDeepLink = false}) async {
-    if (url != null && triggeredByDeepLink) {
-      // Preventing Zero-click SSRF
-      final t = ref.watch(translationsProvider).requireValue;
-      final isConfirmed = await ref
-          .read(dialogNotifierProvider.notifier)
-          .showConfirmation(
-            title: t.dialogs.confirmation.addProfileByDeepLinkWarning.title,
-            message: t.dialogs.confirmation.addProfileByDeepLinkWarning.message(host: _deepLinkHost(url)),
-          );
-      if (isConfirmed) {
-        await _show(isScrollControlled: true, child: AddProfileModal(url: url));
-      }
-    } else {
-      await _show(isScrollControlled: true, child: AddProfileModal(url: url));
-    }
+    await _show(
+      isScrollControlled: true,
+      child: AddProfileModal(url: url, source: triggeredByDeepLink ? ImportSource.deepLink : ImportSource.clipboard),
+    );
   }
 
   Future<void> showProfilesOverview() async => await _show(isScrollControlled: true, child: const ProfilesModal());

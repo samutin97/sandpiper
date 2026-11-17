@@ -30,6 +30,7 @@ class _FakeParser implements ProfileParser {
     required String tempFilePath,
     required UserOverride? userOverride,
     CancelToken? cancelToken,
+    bool active = true,
   }) => _download(tempFilePath);
 
   @override

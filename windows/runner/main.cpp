@@ -7,6 +7,13 @@
 #include "app_links/app_links_plugin_c_api.h"
 // #include <protocol_handler_windows/protocol_handler_windows_plugin_c_api.h>
 
+// The window's title and the single-instance mutex are this app's own: with upstream Hiddify's
+// ("Hiddify", "HiddifyMutex"), a running Hiddify was taken for this app's first copy (the start
+// showed Hiddify's window and quit, and links went to Hiddify), and any program listing the
+// windows found the name.
+static const wchar_t kWindowTitle[] = L"Sandpiper";
+static const wchar_t kInstanceMutex[] = L"SandpiperMutex";
+
 bool SendAppLinkToInstance(const std::wstring &title)
 {
   // Find our exact window
@@ -53,20 +60,20 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // find a copy that another of those entries already started. Showing that copy's window, as a
   // second launch by hand does, would undo a silent start, so this one just leaves.
   if (wcsstr(command_line, L"--autostart") != nullptr &&
-      ::FindWindow(L"FLUTTER_RUNNER_WIN32_WINDOW", L"Hiddify") != nullptr)
+      ::FindWindow(L"FLUTTER_RUNNER_WIN32_WINDOW", kWindowTitle) != nullptr)
   {
     return EXIT_SUCCESS;
   }
 
   // Replace "example" with the generated title found as parameter of `window.Create` in this file.
   // You may ignore the result if you need to create another window.
-  if (SendAppLinkToInstance(L"Hiddify"))
+  if (SendAppLinkToInstance(kWindowTitle))
   {
     return EXIT_SUCCESS;
   }
 
-  HANDLE hMutexInstance = CreateMutex(NULL, TRUE, L"HiddifyMutex");
-  HWND handle = FindWindowA(NULL, "Hiddify");
+  HANDLE hMutexInstance = CreateMutex(NULL, TRUE, kInstanceMutex);
+  HWND handle = FindWindowW(NULL, kWindowTitle);
 
   if (GetLastError() == ERROR_ALREADY_EXISTS)
   {
@@ -78,7 +85,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     std::vector<std::string> command_line_arguments = GetCommandLineArguments();
     project.set_dart_entrypoint_arguments(std::move(command_line_arguments));
     FlutterWindow window(project);
-    if (window.SendAppLinkToInstance(L"Hiddify"))
+    if (window.SendAppLinkToInstance(kWindowTitle))
     {
       return false;
     }
@@ -114,7 +121,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"Hiddify", origin, size))
+  if (!window.Create(kWindowTitle, origin, size))
   {
     return EXIT_FAILURE;
   }

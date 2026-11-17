@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
+import 'package:hiddify/core/http_client/app_traffic.dart';
+import 'package:hiddify/core/http_client/local_proxy_route.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
@@ -506,7 +508,9 @@ class LanSharingQrDialog extends HookConsumerWidget {
     // The device that scans would reach itself at 127.0.0.1, so that gets no code and no link.
     final host = ip == null || ip.isLoopback ? null : ip.address;
     const name = QrCodeDialogConst.lanProfileName;
-    final link = host == null ? null : 'socks://${_userInfo(secret)}$host:$port#$name';
+    final link = host == null
+        ? null
+        : 'socks://${_userInfo(secret, localProxyUser(ref, hardenedCore: hardenedCoreKnown))}$host:$port#$name';
 
     final content = Column(
       children: [
@@ -532,7 +536,12 @@ class LanSharingQrDialog extends HookConsumerWidget {
 
     return _ProxyDialogFrame(
       header: header,
-      links: host == null ? null : (telegram: _telegramLink(host, port, secret), full: link!),
+      links: host == null
+          ? null
+          : (
+              telegram: _telegramLink(host, port, secret, user: localProxyUser(ref, hardenedCore: hardenedCoreKnown)),
+              full: link!,
+            ),
       // while it is off there is no link to copy
       copyLink: shared,
       children: [
@@ -569,13 +578,16 @@ class LocalProxyDialog extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(translationsProvider).requireValue;
     final port = ref.watch(ConfigOptions.mixedPort);
-    final auth = ref.watch(ConfigOptions.localProxyAuth);
-    // the one secret of the user "hiddify", shared with the local network's port
+    // D-12: on a phone the core always asks for the password (config_option_repository), whatever the
+    // desktop setting says; the dialog said "No password set" while it did
+    final auth = PlatformUtils.isMobile || ref.watch(ConfigOptions.localProxyAuth);
+    // the one secret, shared with the local network's port
     final secret = ref.watch(ConfigOptions.lanSharingPassword);
     // the local port asks for the secret only while the user has it ask
     final asked = auth ? secret : '';
     const host = '127.0.0.1';
-    final link = 'socks://${_userInfo(asked)}$host:$port#${QrCodeDialogConst.localhostProfileName}';
+    final user = localProxyUser(ref, hardenedCore: hardenedCoreKnown);
+    final link = 'socks://${_userInfo(asked, user)}$host:$port#${QrCodeDialogConst.localhostProfileName}';
 
     // A password that is asked must exist: one the user removed in the settings gets a new one.
     Future<void> setPassword() async {
@@ -585,7 +597,10 @@ class LocalProxyDialog extends ConsumerWidget {
 
     return _ProxyDialogFrame(
       header: header,
-      links: (telegram: _telegramLink(host, port, asked), full: link),
+      links: (
+        telegram: _telegramLink(host, port, asked, user: localProxyUser(ref, hardenedCore: hardenedCoreKnown)),
+        full: link,
+      ),
       footer: onPick ? const _DontShowAgain() : null,
       children: [
         _Steps(t.dialogs.localProxy.steps),
@@ -722,7 +737,7 @@ class _ProxyFields extends HookConsumerWidget {
     final editing = useState<_Field?>(null);
     final host = this.host;
     final password = this.password;
-    const username = 'hiddify';
+    final username = localProxyUser(ref, hardenedCore: hardenedCoreKnown);
 
     Widget editor(_Field field) => _FieldEditor(
       label: field == _Field.port ? t.dialogs.qrCode.port : t.dialogs.qrCode.password,
@@ -794,7 +809,7 @@ class _ProxyFields extends HookConsumerWidget {
             Row(
               children: [
                 IntrinsicWidth(
-                  child: _CopyTile(label: t.dialogs.qrCode.username, value: const _Value(username), copyText: username),
+                  child: _CopyTile(label: t.dialogs.qrCode.username, value: _Value(username), copyText: username),
                 ),
                 const Gap(8),
                 Expanded(
@@ -814,13 +829,13 @@ class _ProxyFields extends HookConsumerWidget {
 }
 
 /// A link that adds the proxy to Telegram, with the user and [secret] when there is one.
-String _telegramLink(String host, int port, String secret) => Uri(
+String _telegramLink(String host, int port, String secret, {String user = 'hiddify'}) => Uri(
   scheme: 'tg',
   host: 'socks',
   queryParameters: {
     'server': host,
     'port': '$port',
-    if (secret.isNotEmpty) ...{'user': 'hiddify', 'pass': secret},
+    if (secret.isNotEmpty) ...{'user': user, 'pass': secret},
   },
 ).toString();
 
@@ -1015,7 +1030,10 @@ class _Steps extends StatelessWidget {
 }
 
 /// The user and secret of a socks link, or none when the proxy has no secret.
-String _userInfo(String secret) => secret.isEmpty ? '' : 'hiddify:${Uri.encodeComponent(secret)}@';
+/// The user and password of a proxy link: the core's user name (the hardened core's own, "hiddify"
+/// with the official one), not always "hiddify".
+String _userInfo(String secret, String user) =>
+    secret.isEmpty ? '' : '${Uri.encodeComponent(user)}:${Uri.encodeComponent(secret)}@';
 
 /// This device's address on the local network as the core reports it, or null if the core can't say.
 Future<InternetAddress?> _findLanIp(WidgetRef ref) async {

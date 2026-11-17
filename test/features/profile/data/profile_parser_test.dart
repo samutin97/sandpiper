@@ -9,6 +9,7 @@ import 'package:hiddify/features/profile/data/profile_data_mapper.dart';
 import 'package:hiddify/features/profile/data/profile_parser.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/model/profile_failure.dart';
+import 'package:hiddify/singbox/model/singbox_proxy_type.dart';
 import 'package:uuid/uuid.dart';
 
 /// Runs the real download → populate → parse flow for a remote profile from a
@@ -118,6 +119,7 @@ void main() {
         "profile-web-page-url": [validBaseUrl],
         "support-url": [validSupportUrl],
         "ipinfo-url": [validIpinfoUrl],
+        "extra-security": ["warp"],
       };
       // This fix occurs in the _downloadProfile method within ProfileParser, and the fixed headers are passed to populateHeaders
       final fixedHeaders = headers.map((key, value) {
@@ -127,7 +129,9 @@ void main() {
       final allHeaders = ProfileParser.populateHeaders(content: '', remoteHeaders: fixedHeaders);
       expect(allHeaders.isRight(), true);
       allHeaders.match((l) {}, (r) {
-        expect(r['ipinfo-url'], equals(validIpinfoUrl));
+        // H-04: a subscription can not name a third-party IP service or chain WARP/Psiphon
+        expect(r.containsKey('ipinfo-url'), isFalse);
+        expect(r.containsKey('extra-security'), isFalse);
         final profile = ProfileParser.parse(
           tempFilePath: '',
           profile: ProfileEntity.remote(
@@ -160,8 +164,7 @@ void main() {
               );
               expect(rp.webPageUrl, equals(validBaseUrl));
               expect(rp.supportUrl, equals(validSupportUrl));
-              // Kept in populatedHeaders only — not a dedicated entity/DB field.
-              expect(rp.populatedHeaders?['ipinfo-url'], equals(validIpinfoUrl));
+              expect(rp.populatedHeaders?.containsKey('ipinfo-url'), isFalse);
             },
             local: (lp) {},
           );
@@ -558,6 +561,13 @@ void main() {
       );
     });
 
+    test("the server's 12 hours (sp.3 subscription) is kept as given", () {
+      expectRemote(
+        parseRemoteWithHeaders({"profile-title": "p", "profile-update-interval": " 12 "}),
+        (rp) => expect(rp.options, equals(const ProfileOptions(updateInterval: Duration(hours: 12)))),
+      );
+    });
+
     test("non-integer is ignored and the profile still parses (previously threw)", () {
       expectRemote(parseRemoteWithHeaders({"profile-title": "p", "profile-update-interval": "abc"}), (rp) {
         expect(rp.options, isNull);
@@ -747,8 +757,9 @@ void main() {
       expect(populate({"fragment": ""}).containsKey("fragment"), isFalse);
     });
 
-    test("extra-security header is kept", () {
-      expect(populate({"extra-security": "warp"})["extra-security"], equals("warp"));
+    // H-04: a subscription may not chain WARP/Psiphon (servers of third parties) behind the user's
+    test("extra-security header is dropped", () {
+      expect(populate({"extra-security": "warp"}).containsKey("extra-security"), isFalse);
     });
 
     test("old enable-warp header is not kept", () {
@@ -761,6 +772,15 @@ void main() {
   });
 
   group('ProfileParser.protocol', () {
+    // item 15: AmneziaWG profiles, a .conf with obfuscation keys and an AmneziaVPN vpn:// key
+    test('an AmneziaWG .conf and a vpn:// key are AmneziaWG, a plain WireGuard .conf stays WireGuard', () {
+      const awg = '[Interface]\nPrivateKey = x\nJc = 4\nJmin = 10\nH1 = 1-2\n[Peer]\nEndpoint = 203.0.113.5:51820\n';
+      const wg = '[Interface]\nPrivateKey = x\n[Peer]\nEndpoint = 203.0.113.5:51820\n';
+      expect(ProfileParser.protocol(awg), ProxyType.awg.label);
+      expect(ProfileParser.protocol('vpn://AAAAeJzLKCkpKLbS1y8vL9fLTq3MzStOLSoqzUvRS87PBQB2qwkb'), ProxyType.awg.label);
+      expect(ProfileParser.protocol(wg), ProxyType.wireguard.label);
+    });
+
     test('known schemes keep their labels', () {
       expect(ProfileParser.protocol('vless://uuid@1.2.3.4:443'), 'VLESS');
       expect(ProfileParser.protocol('vless://uuid@1.2.3.4:443#My%20Server'), 'My Server');

@@ -1,4 +1,5 @@
-title: Hiddify
+# the disk image's volume name; path below is the .app the build makes (PRODUCT_NAME, unchanged)
+title: Sandpiper
 background: "background.png"
 window:
   size:

@@ -37,7 +37,7 @@ class AppDirectories extends _$AppDirectories with InfraLogger {
       dirs = (baseDir: portableDir, workingDir: portableDir, tempDir: await getTemporaryDirectory());
     } else {
       final baseDir = await getApplicationSupportDirectory();
-      final workingDir = Platform.isAndroid ? await _getAndroidWorkingDirectory() : baseDir;
+      final workingDir = Platform.isAndroid ? await _getAndroidWorkingDirectory(baseDir) : baseDir;
       final tempDir = await getTemporaryDirectory();
       dirs = (baseDir: baseDir, workingDir: workingDir, tempDir: tempDir);
     }
@@ -52,15 +52,44 @@ class AppDirectories extends _$AppDirectories with InfraLogger {
     return dirs;
   }
 
-  static Future<Directory> _getAndroidWorkingDirectory() async {
+  /// H-05: on Android the core's working directory (profile configs, the core's database and logs,
+  /// crash reports) is in the app's private storage (`files/working`, 0700, files 0600 by the app's
+  /// umask), never on shared storage: `Android/data/<package>/files` is readable over USB/MTP and
+  /// adb, by apps with storage access on Android 7-10, and went into backups.
+  static Future<Directory> _getAndroidWorkingDirectory(Directory baseDir) async {
+    final working = Directory(p.join(baseDir.path, 'working'));
+    if (!working.existsSync()) await working.create(recursive: true);
+    await _leaveExternalStorage(working);
+    return working;
+  }
+
+  /// Once: moves the profile configs an older build kept on external storage into [working] and
+  /// deletes everything that was there (configs, logs, current-config.json, crash reports). A new
+  /// install has nothing there; any failure is ignored, the app works without it.
+  static Future<void> _leaveExternalStorage(Directory working) async {
+    final marker = File(p.join(working.path, '.external-storage-checked'));
+    if (marker.existsSync()) return;
     try {
-      final extDir = await getExternalStorageDirectory();
-      if (extDir == null) return getApplicationDocumentsDirectory();
-      if (extDir.existsSync()) return extDir;
-      await extDir.create(recursive: true);
-      return extDir;
+      final external = await getExternalStorageDirectory();
+      if (external != null && external.existsSync()) {
+        final oldConfigs = Directory(p.join(external.path, 'configs'));
+        final newConfigs = Directory(p.join(working.path, 'configs'));
+        if (oldConfigs.existsSync() && !newConfigs.existsSync()) {
+          await newConfigs.create(recursive: true);
+          for (final file in oldConfigs.listSync().whereType<File>()) {
+            await file.copy(p.join(newConfigs.path, p.basename(file.path)));
+          }
+        }
+        for (final entry in external.listSync()) {
+          try {
+            await entry.delete(recursive: true);
+          } catch (_) {}
+        }
+      }
     } catch (_) {}
-    return getApplicationDocumentsDirectory();
+    try {
+      await marker.create();
+    } catch (_) {}
   }
 
   static Future<Directory> getDatabaseDirectory() async {

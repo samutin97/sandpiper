@@ -3,6 +3,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gap/gap.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/environment.dart';
+import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/common/qr_code_dialog.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/widget/lan_sharing_tile.dart';
@@ -19,6 +20,20 @@ class InboundOptionsPage extends HookConsumerWidget with AppLogger {
     final t = ref.watch(translationsProvider).requireValue;
     final text = t.pages.settings.inbound;
     final mode = ref.watch(ConfigOptions.serviceMode);
+    // H-06: proxy mode opens a port on this device; it is said once it is picked
+    ref.listen(ConfigOptions.serviceMode, (previous, next) {
+      if (previous != next && next == ServiceMode.proxy && PlatformUtils.isMobile) {
+        ref
+            .read(dialogNotifierProvider.notifier)
+            .showCustomAlert(title: t.fork.localProxy.proxyModeTitle, message: t.fork.localProxy.proxyModeMsg);
+      }
+      // B-03: the system proxy's port takes no password and its address is in the system's settings
+      if (previous != next && next == ServiceMode.systemProxy && PlatformUtils.isDesktop) {
+        ref
+            .read(dialogNotifierProvider.notifier)
+            .showCustomAlert(title: t.fork.localProxy.systemProxyTitle, message: t.fork.localProxy.systemProxyMsg);
+      }
+    });
     final vpn = mode == ServiceMode.tun || mode == ServiceMode.router;
     final shared = ref.watch(ConfigOptions.allowConnectionFromLan);
     final localAuth = ref.watch(ConfigOptions.localProxyAuth);
@@ -77,25 +92,34 @@ class InboundOptionsPage extends HookConsumerWidget with AppLogger {
             presentValue: localPort,
             trailing: SwitchPreferenceWidget(preference: ConfigOptions.enableMixedPort),
           ),
-          SwitchListTile.adaptive(
-            title: Text(text.localProxyInVpn),
-            subtitle: Text(text.localProxyInVpnHint),
-            secondary: const Icon(Icons.vpn_lock_rounded),
-            value: ref.watch(ConfigOptions.localProxyInVpn),
-            onChanged: ref.read(ConfigOptions.localProxyInVpn.notifier).update,
-          ),
-          SwitchListTile.adaptive(
-            title: Text(text.localProxyAuth),
-            subtitle: Text(
-              mode == ServiceMode.systemProxy
-                  ? '${text.localProxyAuthHint}\n${text.notAsSystemProxy}'
-                  : text.localProxyAuthHint,
+          // H-06: on phones the local port never stays open in VPN mode and always asks for the password
+          if (PlatformUtils.isMobile)
+            ListTile(
+              leading: const Icon(Icons.password_rounded),
+              title: Text(t.fork.localProxy.alwaysAuth),
+              subtitle: Text(t.fork.localProxy.alwaysAuthMsg),
             ),
-            secondary: const Icon(Icons.password_rounded),
-            value: localAuth,
-            onChanged: ref.read(ConfigOptions.localProxyAuth.notifier).update,
-          ),
-          if (localAuth) const _ProxySecretTile(),
+          if (!PlatformUtils.isMobile)
+            SwitchListTile.adaptive(
+              title: Text(text.localProxyInVpn),
+              subtitle: Text(text.localProxyInVpnHint),
+              secondary: const Icon(Icons.vpn_lock_rounded),
+              value: ref.watch(ConfigOptions.localProxyInVpn),
+              onChanged: ref.read(ConfigOptions.localProxyInVpn.notifier).update,
+            ),
+          if (!PlatformUtils.isMobile)
+            SwitchListTile.adaptive(
+              title: Text(text.localProxyAuth),
+              subtitle: Text(
+                mode == ServiceMode.systemProxy
+                    ? '${text.localProxyAuthHint}\n${text.notAsSystemProxy}'
+                    : text.localProxyAuthHint,
+              ),
+              secondary: const Icon(Icons.password_rounded),
+              value: localAuth,
+              onChanged: ref.read(ConfigOptions.localProxyAuth.notifier).update,
+            ),
+          if (localAuth || PlatformUtils.isMobile) const _ProxySecretTile(),
           _GroupHeader(text.lanGroup),
           const LanSharingPreferenceWidget(),
           ValuePreferenceWidget(

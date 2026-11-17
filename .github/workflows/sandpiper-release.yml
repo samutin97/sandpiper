@@ -1,0 +1,542 @@
+# Sandpiper release build: the core from the pinned submodule `hiddify-core` (the fork's own core,
+# with its own submodules), then the app for Android, Windows x64 and macOS, and a DRAFT release of
+# this repository with every file and SHA256SUMS.txt. Nothing else is published: no app stores, no
+# Sentry, no VirusTotal, no notifications, nothing sent to upstream repositories.
+#
+# Runs:
+# - by hand: Actions > "Sandpiper release" > Run workflow (or `gh workflow run sandpiper-release.yml
+#   --ref hardened`): a draft named v<version>-test.<run number>;
+# - on a tag v<version>-sp.<n> (it must match `version:` in pubspec.yaml): a draft for that tag.
+# A draft is visible only to the repository's collaborators until someone publishes it.
+#
+# Secrets (Settings > Secrets and variables > Actions), for the Android release key:
+#   ANDROID_KEYSTORE_BASE64    the .jks keystore, base64
+#   ANDROID_KEYSTORE_PASSWORD  its store password
+#   ANDROID_KEY_PASSWORD       the key's password (optional: the store password)
+#   ANDROID_KEY_ALIAS          the key's alias (optional: sandpiper)
+# The APKs are checked against the certificate of the existing releases (ANDROID_CERT_SHA256), so a
+# wrong keystore stops the build instead of producing APKs that do not update installed ones.
+# Windows and macOS builds are not code-signed (no certificate): see the release notes.
+name: Sandpiper release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*-sp.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sandpiper-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Go 1.27.4 (hiddify-core/go.mod) refuses cronet-go's "#cgo LDFLAGS: -l:libcronet.a" without it
+  CGO_LDFLAGS_ALLOW: '-l:libcronet.a'
+  GOTOOLCHAIN: local
+  GOWORK: 'off'
+  # release builds: lib/main_prod.dart (Makefile)
+  CHANNEL: prod
+  # SHA-256 of the release certificate (CN=Sandpiper) of the published APKs
+  ANDROID_CERT_SHA256: ed3314eae1438c70591bc825fa216e0613b637cc8854d0299bea098227974f59
+  # the sing-box version string the core reports (as in the local build script)
+  SINGBOX_VERSION: 1.15.0-alpha.13
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Version and tag
+        id: v
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml | tr -d '\r')"
+          [[ -n "$version" ]] || { echo "::error::no version in pubspec.yaml"; exit 1; }
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            tag="$GITHUB_REF_NAME"
+            [[ "$tag" == "v$version" ]] || { echo "::error::tag $tag does not match version $version of pubspec.yaml"; exit 1; }
+          else
+            tag="v$version-test.$GITHUB_RUN_NUMBER"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Sandpiper $version, release $tag, commit $GITHUB_SHA, core $(git rev-parse HEAD:hiddify-core)"
+
+  # ---- The core, built from the pinned submodule (never downloaded) ----
+
+  core-android:
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: hiddify-core/go.mod
+          cache-dependency-path: hiddify-core/go.sum
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # the NDK of the local builds and of android/app/build.gradle
+      - name: Android NDK 28.2.13676358
+        run: |
+          set -euo pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;28.2.13676358" < /dev/null > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
+
+      - name: Build hiddify-core.aar
+        working-directory: hiddify-core
+        env:
+          CODE_VERSION: -X github.com/hiddify/hiddify-core/v2/hcommon/constants.Version=${{ needs.version.outputs.version }} -X github.com/sagernet/sing-box/constant.Version=${{ env.SINGBOX_VERSION }}
+        run: |
+          set -euo pipefail
+          go install github.com/sagernet/gomobile/cmd/gomobile@v0.1.12
+          go install github.com/sagernet/gomobile/cmd/gobind@v0.1.12
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          make prepare
+          # lib_install would run `npm install` (browser RPC stubs), not needed for the aar
+          GOFLAGS=-mod=mod make -o lib_install android
+          ls -la bin
+          sha256sum bin/hiddify-core.aar
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: core-android
+          path: hiddify-core/bin/hiddify-core.aar
+          retention-days: 3
+          if-no-files-found: error
+
+  core-windows:
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: hiddify-core/go.mod
+          cache-dependency-path: hiddify-core/go.sum
+
+      - name: MinGW-w64
+        uses: egor-tensin/setup-mingw@v2
+        with:
+          platform: x64
+
+      # hiddify-core.dll, libcronet.dll and the launchers HiddifyCore.exe, HiddifyAdmin.exe,
+      # HiddifyCoreEngine.exe (cross-compiled, as hiddify-core's own CI does)
+      - name: Build the Windows core
+        working-directory: hiddify-core
+        env:
+          CODE_VERSION: -X github.com/hiddify/hiddify-core/v2/hcommon/constants.Version=${{ needs.version.outputs.version }} -X github.com/sagernet/sing-box/constant.Version=${{ env.SINGBOX_VERSION }}
+        run: |
+          set -euo pipefail
+          make VERSION="${{ needs.version.outputs.version }}" windows-amd64
+          ls -la bin
+
+      - name: Pack hiddify-lib-windows-amd64.tar.gz
+        working-directory: hiddify-core/bin
+        run: |
+          set -euo pipefail
+          tar -czf hiddify-lib-windows-amd64.tar.gz hiddify-core.dll libcronet.dll HiddifyCore.exe HiddifyAdmin.exe HiddifyCoreEngine.exe
+          tar -tzf hiddify-lib-windows-amd64.tar.gz
+          sha256sum hiddify-lib-windows-amd64.tar.gz
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: core-windows
+          path: hiddify-core/bin/hiddify-lib-windows-amd64.tar.gz
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+
+  core-macos:
+    needs: version
+    runs-on: macos-15
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: hiddify-core/go.mod
+          cache-dependency-path: hiddify-core/go.sum
+
+      # hiddify-core.dylib (arm64 + x86_64) and HiddifyTunnelCore.xcframework (the tunnel service)
+      - name: Build the macOS core
+        working-directory: hiddify-core
+        env:
+          CODE_VERSION: -X github.com/hiddify/hiddify-core/v2/hcommon/constants.Version=${{ needs.version.outputs.version }} -X github.com/sagernet/sing-box/constant.Version=${{ env.SINGBOX_VERSION }}
+        run: |
+          set -euo pipefail
+          make VERSION="${{ needs.version.outputs.version }}" macos
+          ls -la bin
+
+      - name: Pack hiddify-lib-macos.tar.gz
+        working-directory: hiddify-core/bin
+        run: |
+          set -euo pipefail
+          tar -czf hiddify-lib-macos.tar.gz hiddify-core.dylib HiddifyTunnelCore.xcframework
+          tar -tzf hiddify-lib-macos.tar.gz | head -20
+          shasum -a 256 hiddify-lib-macos.tar.gz
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: core-macos
+          path: hiddify-core/bin/hiddify-lib-macos.tar.gz
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+
+  # ---- The app ----
+
+  # The generated Dart code (build_runner, slang) is the same on every platform: made once.
+  codegen:
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-flutter
+        with:
+          platform: common
+          install-deps: false
+
+      - name: Pack the generated code
+        run: |
+          set -euo pipefail
+          git ls-files --others -- lib test > "$RUNNER_TEMP/generated-files.txt"
+          echo "$(wc -l < "$RUNNER_TEMP/generated-files.txt") generated files"
+          test -s "$RUNNER_TEMP/generated-files.txt"
+          tar -czf generated-code.tar.gz -T "$RUNNER_TEMP/generated-files.txt"
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: generated-code
+          path: generated-code.tar.gz
+          retention-days: 1
+          compression-level: 0
+          if-no-files-found: error
+
+  test:
+    needs: codegen
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-flutter
+        with:
+          platform: common
+          install-deps: false
+          generated-code: true
+
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Test
+        run: flutter test
+
+  android:
+    needs: [version, codegen, core-android]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # a path inside the workspace: scripts/fetch-core.sh is given it relative to the repository
+      - uses: actions/download-artifact@v7
+        with:
+          name: core-android
+          path: .core
+
+      - name: The core this run built, checked by SHA-256
+        run: |
+          set -euo pipefail
+          echo "CORE_AAR=.core/hiddify-core.aar" >> "$GITHUB_ENV"
+          echo "CORE_SHA256=$(sha256sum .core/hiddify-core.aar | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+      # Flutter, packages, the generated code and `make android-apk-prepare` (fetch-core.sh puts
+      # CORE_AAR into android/app/libs)
+      - uses: ./.github/actions/setup-flutter
+        with:
+          platform: android-apk
+          generated-code: true
+
+      - name: Release key (android/key.properties)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEYSTORE_BASE64" || -z "$KEYSTORE_PASSWORD" ]]; then
+            echo "::error::secrets ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD are not set"
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | tr -d ' \r\n' | base64 -d > "$RUNNER_TEMP/release.jks"
+          store="$(printf '%s' "$KEYSTORE_PASSWORD" | tr -d '\r\n')"
+          key="$(printf '%s' "${KEY_PASSWORD:-$KEYSTORE_PASSWORD}" | tr -d '\r\n')"
+          alias="$(printf '%s' "${KEY_ALIAS:-sandpiper}" | tr -d '\r\n')"
+          printf '%s=%s\n' storeFile "$RUNNER_TEMP/release.jks" storePassword "$store" keyPassword "$key" keyAlias "$alias" > android/key.properties
+
+      - name: Build the APKs (arm64-v8a, armeabi-v7a, x86_64, universal)
+        run: |
+          set -euo pipefail
+          flutter build apk --release --target lib/main_prod.dart \
+            --target-platform android-arm,android-arm64,android-x64 \
+            --dart-define=commit="$(git rev-parse --short=7 HEAD)"
+          rm -f android/key.properties "$RUNNER_TEMP/release.jks"
+          ls -la build/app/outputs/flutter-apk
+
+      - name: Check the signature and the manifest, collect
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          bt="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)"
+          f=build/app/outputs/flutter-apk
+          mkdir -p out
+          for pair in arm64-v8a:app-arm64-v8a-release armeabi-v7a:app-armeabi-v7a-release x86_64:app-x86_64-release universal:app-release; do
+            abi="${pair%%:*}"; apk="$f/${pair#*:}.apk"
+            [[ -f "$apk" ]] || { echo "::error::$apk was not built"; exit 1; }
+            cert="$("${bt}apksigner" verify --print-certs "$apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+            if [[ "$cert" != "$ANDROID_CERT_SHA256" ]]; then
+              echo "::error::$apk is signed by $cert, not by the release certificate $ANDROID_CERT_SHA256"
+              exit 1
+            fi
+            python3 -I scripts/check-sandpiper-apk.py "${bt}aapt2" "$apk" > /dev/null
+            cp "$apk" "out/Sandpiper-$VERSION-android-$abi.apk"
+          done
+          ls -la out
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: app-android
+          path: out
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+
+  windows:
+    needs: [version, codegen, core-windows]
+    runs-on: windows-latest
+    timeout-minutes: 75
+    env:
+      # the Makefile then uses the POSIX rm of the runner
+      IS_GITHUB_ACTIONS: 1
+      # the app knows it bundles the hardened core (Makefile, lib/core/http_client/app_traffic.dart)
+      CORE_HARDENED: 1
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: core-windows
+          path: .core
+
+      # Flutter, packages and the generated code; the core is put in place below (not by make)
+      - uses: ./.github/actions/setup-flutter
+        with:
+          platform: common
+          install-deps: false
+          generated-code: true
+
+      - name: The core this run built, checked by SHA-256 (hiddify-core/bin)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # a relative path: GNU tar of Git Bash reads "D:\..." as a remote host
+          CORE_ARCHIVE=.core/hiddify-lib-windows-amd64.tar.gz \
+          CORE_SHA256="$(sha256sum .core/hiddify-lib-windows-amd64.tar.gz | cut -d' ' -f1)" \
+            bash scripts/fetch-core.sh windows-amd64 hiddify-core/bin
+          ls -la hiddify-core/bin
+
+      - name: fastforge and Inno Setup
+        shell: pwsh
+        run: |
+          dart pub global activate fastforge
+          "$env:LOCALAPPDATA\Pub\Cache\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          if ($env:PUB_CACHE) { "$env:PUB_CACHE\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8 }
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) {
+            choco install innosetup -y --no-progress
+          }
+
+      - name: Portable zip
+        shell: pwsh
+        run: make windows-zip-release
+
+      - name: Setup.exe
+        shell: pwsh
+        run: make windows-exe-release
+
+      - name: Collect
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          find dist -type f
+          exe="$(find dist -iname '*.exe' -type f | head -1)"
+          zip="$(find dist -iname '*.zip' -type f | head -1)"
+          [[ -n "$exe" && -n "$zip" ]] || { echo "::error::no Setup.exe or portable zip under dist"; exit 1; }
+          mkdir -p out
+          cp "$exe" "out/Sandpiper-$VERSION-windows-x64-setup.exe"
+          cp "$zip" "out/Sandpiper-$VERSION-windows-x64-portable.zip"
+          ls -la out
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: app-windows
+          path: out
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+
+  macos:
+    needs: [version, codegen, core-macos]
+    runs-on: macos-26
+    timeout-minutes: 75
+    env:
+      CORE_HARDENED: 1
+    steps:
+      # the core helper is built from hiddify-core/cmd/launcher/main.c (Makefile macos-libs)
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: actions/download-artifact@v7
+        with:
+          name: core-macos
+          path: .core
+
+      # Without a Developer ID the app is signed ad hoc and its VPN mode runs in the root helper
+      # the user installs (macos/Runner/Configs/Unsigned.xcconfig).
+      - name: The core this run built, ad hoc signing
+        run: |
+          set -euo pipefail
+          echo "CORE_ARCHIVE=.core/hiddify-lib-macos.tar.gz" >> "$GITHUB_ENV"
+          echo "CORE_SHA256=$(shasum -a 256 .core/hiddify-lib-macos.tar.gz | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "XCODE_XCCONFIG_FILE=$GITHUB_WORKSPACE/macos/Runner/Configs/Unsigned.xcconfig" >> "$GITHUB_ENV"
+
+      # Flutter, packages, the generated code, `make macos-install-deps` and `make macos-prepare`
+      # (fetch-core.sh unpacks CORE_ARCHIVE; the xcframework goes to macos/Frameworks)
+      - uses: ./.github/actions/setup-flutter
+        with:
+          platform: macos
+          generated-code: true
+
+      - name: Build the dmg
+        run: make macos-release
+
+      - name: Collect
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          find dist -type f
+          dmg="$(find dist -name '*.dmg' -type f | head -1)"
+          [[ -n "$dmg" ]] || { echo "::error::no dmg under dist"; exit 1; }
+          mkdir -p out
+          cp "$dmg" "out/Sandpiper-$VERSION-macos-universal.dmg"
+          ls -la out
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: app-macos
+          path: out
+          retention-days: 3
+          compression-level: 0
+          if-no-files-found: error
+
+  # ---- The draft release ----
+
+  # Needs the tests and the Android build; a Windows or macOS build that failed is left out (the
+  # notes say which platforms are in), and the run shows the failure.
+  release:
+    needs: [version, test, android, windows, macos]
+    if: ${{ !cancelled() && needs.test.result == 'success' && needs.android.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: app-*
+          path: out
+          merge-multiple: true
+
+      - name: SHA256SUMS.txt and the notes
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          WINDOWS: ${{ needs.windows.result }}
+          MACOS: ${{ needs.macos.result }}
+        run: |
+          set -euo pipefail
+          cd out
+          sha256sum Sandpiper-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          core="$(git -C .. rev-parse HEAD:hiddify-core)"
+          core_url="$(git -C .. config -f .gitmodules submodule.hiddify-core.url | sed 's#\.git$##')"
+          {
+            echo "Sandpiper $VERSION — a modified build of [Hiddify](https://github.com/hiddify/hiddify-app) under [Hiddify Extended GPL v3](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/LICENSE.md); changes: [CHANGES-FORK.md](https://github.com/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/CHANGES-FORK.md)."
+            echo
+            echo "Built by GitHub Actions ([run $GITHUB_RUN_ID](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)) from [$GITHUB_SHA](https://github.com/$GITHUB_REPOSITORY/tree/$GITHUB_SHA); core: [$core]($core_url/tree/$core)."
+            echo
+            echo "Platforms: Android — yes; Windows x64 — $([[ "$WINDOWS" == success ]] && echo yes || echo "no ($WINDOWS)"); macOS — $([[ "$MACOS" == success ]] && echo yes || echo "no ($MACOS)")."
+            echo
+            echo "- **Android**: \`Sandpiper-$VERSION-android-<abi>.apk\` (arm64-v8a for most phones, universal for any). Signed by the release key, certificate SHA-256 \`$ANDROID_CERT_SHA256\`; installs over earlier Sandpiper releases."
+            echo "- **Windows x64**: \`…-windows-x64-setup.exe\` (installer, asks for administrator rights) or \`…-windows-x64-portable.zip\`. Not code-signed: SmartScreen says \"Windows protected your PC\" — check the SHA-256 below, then *More info* → *Run anyway*."
+            echo "- **macOS** (Apple Silicon and Intel): \`…-macos-universal.dmg\`. Signed ad hoc, not notarized: drag the app to Applications, then Control-click it → *Open* → *Open* (or System Settings → Privacy & Security → *Open Anyway*; or \`xattr -dr com.apple.quarantine /Applications/<app>.app\`)."
+            echo
+            echo "SHA-256:"
+            echo '```'
+            cat SHA256SUMS.txt
+            echo '```'
+          } > "$RUNNER_TEMP/notes.md"
+
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" out/* --clobber
+            gh release edit "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          elif [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            gh release create "$TAG" --draft --verify-tag --title "Sandpiper $VERSION" --notes-file "$RUNNER_TEMP/notes.md" out/*
+          else
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "Sandpiper $VERSION (test build $GITHUB_RUN_NUMBER)" --notes-file "$RUNNER_TEMP/notes.md" out/*
+          fi
+          echo "Draft: https://github.com/$GITHUB_REPOSITORY/releases (drafts are visible to collaborators only)"

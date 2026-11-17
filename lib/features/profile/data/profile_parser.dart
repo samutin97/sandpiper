@@ -54,6 +54,9 @@ class ProfileParser with InfraLogger {
     'keep-top-pinned',
     'keep-tags',
   ];
+  /// The headers a subscription may send. Not `extra-security` (it would chain WARP or Psiphon, servers
+  /// of third parties, behind the user's) nor `ipinfo-url` (a third party told the exit IP): a link must
+  /// not change settings (H-04).
   static const allowedProfileHeaders = [
     'profile-title',
     'content-disposition',
@@ -61,11 +64,15 @@ class ProfileParser with InfraLogger {
     'profile-update-interval',
     'support-url',
     'profile-web-page-url',
-    'ipinfo-url',
-    'extra-security',
     'fragment',
     'keep-top',
   ];
+
+  /// Whether [url] is an https URL with a host: the only kind of subscription downloaded.
+  static bool isHttpsUrl(String url) {
+    final uri = Uri.tryParse(url.trim());
+    return uri != null && uri.scheme.toLowerCase() == 'https' && uri.host.isNotEmpty;
+  }
 
   final DioHttpClient _httpClient;
 
@@ -75,6 +82,7 @@ class ProfileParser with InfraLogger {
     required String content,
     required String tempFilePath,
     required UserOverride? userOverride,
+    bool active = true,
   }) {
     return TaskEither.fromEither(populateHeaders(content: content)).flatMap(
       (populatedHeaders) => _expandLinksInFile(tempFilePath, null).flatMap(
@@ -83,7 +91,7 @@ class ProfileParser with InfraLogger {
             tempFilePath: tempFilePath,
             profile: ProfileEntity.local(
               id: id,
-              active: true,
+              active: active,
               name: '',
               lastUpdate: DateTime.now(),
               userOverride: userOverride,
@@ -101,6 +109,7 @@ class ProfileParser with InfraLogger {
     required String tempFilePath,
     required UserOverride? userOverride,
     CancelToken? cancelToken,
+    bool active = true,
   }) => _downloadProfile(url, tempFilePath, cancelToken).flatMap(
     (remoteHeaders) =>
         TaskEither.fromEither(
@@ -112,7 +121,7 @@ class ProfileParser with InfraLogger {
                 tempFilePath: tempFilePath,
                 profile: ProfileEntity.remote(
                   id: id,
-                  active: true,
+                  active: active,
                   name: '',
                   url: url,
                   lastUpdate: DateTime.now(),
@@ -160,8 +169,10 @@ class ProfileParser with InfraLogger {
     String tempFilePath,
     CancelToken? cancelToken,
   ) => TaskEither.tryCatch(() async {
-    // if (url.startsWith("http://"))
-    //   throw const ProfileFailure.invalidUrl('HTTP is not supported. Please use HTTPS for secure connection.');
+    // M-13/H-04: https only. Over http the provider reads the whole URL, the access token with it.
+    if (!isHttpsUrl(url)) {
+      throw const ProfileFailure.invalidUrl('Only https:// subscriptions are accepted.');
+    }
 
     final rs = await _httpClient.download(url.trim(), tempFilePath, cancelToken: cancelToken).catchError((err) {
       if (CancelToken.isCancel(err as DioException)) {
@@ -228,7 +239,8 @@ class ProfileParser with InfraLogger {
   /// An http(s) line is a subscription link only when its URL has a path. HTTP proxy links have none: the core reads
   /// their options from the query.
   static bool _isSubscriptionLink(String line) {
-    if (!line.startsWith('http://') && !line.startsWith('https://')) return false;
+    // only https lines are downloaded; an http one stays as it is and the core drops it
+    if (!line.startsWith('https://')) return false;
     final path = Uri.tryParse(line.trimRight())?.path ?? '';
     return path.isNotEmpty && path != '/';
   }
@@ -448,8 +460,12 @@ class ProfileParser with InfraLogger {
 
   static String protocol(String content) {
     if (content.contains("[Interface]")) {
-      return ProxyType.wireguard.label;
+      // AmneziaWG: a WireGuard .conf with obfuscation keys (Jc, S1, H1 ...)
+      final awg = RegExp(r'^\s*(jc|jmin|jmax|s[1-4]|h[1-4]|i[1-5])\s*=', caseSensitive: false, multiLine: true);
+      return awg.hasMatch(content) ? ProxyType.awg.label : ProxyType.wireguard.label;
     }
+    // an AmneziaVPN key: the core reads it (vpn://, item 15)
+    if (content.trimLeft().startsWith('vpn://')) return ProxyType.awg.label;
     // a .ovpn file: its certificate inline, and the server it connects to
     if (content.contains('<ca>') && RegExp(r'^\s*remote\s', multiLine: true).hasMatch(content)) {
       return 'OpenVPN';
@@ -519,7 +535,8 @@ class ProfileParser with InfraLogger {
   }
 
   /// How many proxies run, the fastest, when neither the user nor the subscription says.
-  static const keepTopDefault = 5;
+  /// M-08: three, so a connect tests and keeps fewer proxies to the same server.
+  static const keepTopDefault = 3;
 
   /// A `keep-top` header: how many proxies to keep running, or -1 for all. Anything else is no
   /// header at all.

@@ -128,17 +128,24 @@ class AboutPage extends HookConsumerWidget {
                 title: Text(t.pages.about.sourceCode),
                 trailing: const Icon(FluentIcons.open_24_regular),
                 onTap: () async {
+                  await UriUtils.tryLaunch(Uri.parse(Constants.sourceUrl));
+                },
+              ),
+              // attribution, as Hiddify's license asks (LICENSE.md, clause 3)
+              ListTile(
+                title: Text(t.fork.about.basedOn),
+                subtitle: Text(t.fork.about.basedOnMsg),
+                trailing: const Icon(FluentIcons.open_24_regular),
+                onTap: () async {
                   await UriUtils.tryLaunch(Uri.parse(Constants.githubUrl));
                 },
               ),
               ListTile(
-                title: Text(t.pages.about.telegramChannel),
+                title: Text(t.fork.about.license),
+                subtitle: Text(t.fork.about.licenseMsg),
                 trailing: const Icon(FluentIcons.open_24_regular),
                 onTap: () async {
-                  await UriUtils.tryLaunchAppOrWeb(
-                    Uri.parse(Constants.telegramChannelAppUrl),
-                    Uri.parse(Constants.telegramChannelUrl),
-                  );
+                  await UriUtils.tryLaunch(Uri.parse(Constants.licenseUrl));
                 },
               ),
               ListTile(

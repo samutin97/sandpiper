@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/haptic/haptic_service.dart';
+import 'package:hiddify/core/http_client/app_traffic.dart';
+import 'package:hiddify/core/http_client/http_client_provider.dart';
+import 'package:hiddify/core/http_client/local_proxy_route.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
@@ -16,15 +19,15 @@ import 'package:hiddify/features/profile/data/profile_path_resolver.dart';
 import 'package:hiddify/features/profile/data/profile_repository.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
+import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/window/notifier/window_notifier.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
 import 'package:hiddify/singbox/model/core_status.dart';
+import 'package:hiddify/singbox/model/singbox_config_enum.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:in_app_review/in_app_review.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:rxdart/rxdart.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
 
 part 'connection_notifier.g.dart';
 
@@ -38,20 +41,6 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       }).run();
     }
 
-    listenSelf((previous, next) async {
-      if (previous == next) return;
-      if (previous case AsyncData(:final value) when !value.isConnected) {
-        if (next case AsyncData(value: final Connected _)) {
-          if (Platform.isAndroid && !ref.read(Preferences.storeReviewedByUser)) {
-            if (await InAppReview.instance.isAvailable()) {
-              InAppReview.instance.requestReview();
-              ref.read(Preferences.storeReviewedByUser.notifier).update(true);
-            }
-          }
-        }
-      }
-    });
-
     ref.listen(activeProfileProvider.select((value) => value.asData?.value), (previous, next) async {
       if (previous == null) return;
       final shouldReconnect = next == null || previous.id != next.id;
@@ -64,6 +53,7 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
     // further taps are ignored with no error. Proxy/stats notifiers already watch the signal.
 
     yield* _connectionRepo.watchConnectionStatus().doOnData((event) {
+      unawaited(_updateAppTraffic(event));
       if (event case Disconnected(connectionFailure: final _?) when PlatformUtils.isDesktop) {
         Future.microtask(() => ref.read(Preferences.startedByUser.notifier).update(false));
       }
@@ -80,6 +70,30 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
   }
 
   ConnectionRepository get _connectionRepo => ref.read(connectionRepositoryProvider);
+
+  bool? _appInsideVpn;
+
+  /// Tells the HTTP client where the app's own requests go now (H-02, H-03): through the VPN when
+  /// it is up and carries this app, through the core's proxy of this session in proxy mode, else
+  /// directly.
+  Future<void> _updateAppTraffic(ConnectionStatus status) async {
+    final connected = status is Connected || status is NoAvailableProxies || status is HotReloading;
+    final mode = ref.read(ConfigOptions.serviceMode);
+    // the system proxy is for other apps: dart:io does not use it, so it counts as proxy mode here
+    final vpnMode = mode == ServiceMode.tun || mode == ServiceMode.router;
+    final insideVpn = _appInsideVpn ??= await appInsideOwnVpn();
+    final hardened = await hardenedCore();
+    ref
+        .read(httpClientProvider)
+        .setTrafficState(
+          AppTrafficState(
+            connected: connected,
+            vpnMode: vpnMode,
+            appInsideVpn: insideVpn,
+            proxy: connected && !vpnMode ? localProxyRoute(ref, hardenedCore: hardened) : null,
+          ),
+        );
+  }
 
   Future<void> mayConnect() async {
     if (state case AsyncData(:final value)) {
@@ -270,9 +284,6 @@ class ConnectionNotifier extends _$ConnectionNotifier with AppLogger {
       }
       await dialogs.showCustomAlertFromErr(err.present(t));
       loggy.warning(err);
-      if (err.toString().contains("panic")) {
-        await Sentry.captureException(Exception(err.toString()));
-      }
       await startedByUser.update(false);
     }).run();
     return failure;

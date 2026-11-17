@@ -167,7 +167,8 @@ void main() {
       expect(release.allowCustomUpdateChecker, isFalse, reason: '$release');
       expect(InstallKind.detect(release), InstallKind.store, reason: '$release');
     }
-    expect(Release.general.allowCustomUpdateChecker, isTrue);
+    // the fork: no build checks for updates
+    expect(Release.general.allowCustomUpdateChecker, isFalse);
   });
 
   test('an MSIX package runs from WindowsApps', () {

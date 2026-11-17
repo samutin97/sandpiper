@@ -28,6 +28,14 @@ class VpnServiceFailure implements Exception {
     'is started from a terminal or over SSH. Start Hiddify from the applications menu and try again.',
   );
 
+  /// B-02: the portable build of Windows runs from a folder its user can write to, and the service
+  /// would run that folder's HiddifyAdmin.exe as SYSTEM at every boot: any program of the user could
+  /// replace it. It installs no service; VPN mode runs only in an app started as administrator.
+  static const portable = VpnServiceFailure(
+    'The portable build installs no VPN service: start it as administrator for VPN mode, use proxy '
+    'mode, or install the setup build.',
+  );
+
   @override
   String toString() => message;
 }

@@ -156,7 +156,7 @@ class _DownloadClient extends DioHttpClient {
     CancelToken? cancelToken,
     String? userAgent,
     ({String username, String password})? credentials,
-    bool proxyOnly = false,
+    bool tunnelOnly = false,
     ProgressCallback? onReceiveProgress,
   }) async {
     downloads++;

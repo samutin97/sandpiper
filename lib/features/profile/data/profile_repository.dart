@@ -43,7 +43,7 @@ abstract interface class ProfileRepository {
   });
 
   /// Adds [content] as a local profile; returns its id.
-  TaskEither<ProfileFailure, String> addLocal(String content, {UserOverride? userOverride});
+  TaskEither<ProfileFailure, String> addLocal(String content, {UserOverride? userOverride, bool activate = true});
   TaskEither<ProfileFailure, Unit> offlineUpdate(ProfileEntity nProfile, String nContent);
   TaskEither<ProfileFailure, Unit> validateConfig(String path, String tempPath, String? profileOverride, bool debug);
   TaskEither<ProfileFailure, String> generateConfig(String id);
@@ -215,6 +215,7 @@ class ProfileRepositoryImpl with ExceptionHandler, InfraLogger implements Profil
                 tempFilePath: tempFile.path,
                 userOverride: userOverride,
                 cancelToken: cancelToken,
+                active: activate,
               )
               .flatMap(
                 (profEntity) =>
@@ -242,7 +243,7 @@ class ProfileRepositoryImpl with ExceptionHandler, InfraLogger implements Profil
       });
 
   @override
-  TaskEither<ProfileFailure, String> addLocal(String content, {UserOverride? userOverride}) =>
+  TaskEither<ProfileFailure, String> addLocal(String content, {UserOverride? userOverride, bool activate = true}) =>
       TaskEither.tryCatch(() async {
         final id = const Uuid().v4();
         final file = _profilePathResolver.file(id);
@@ -250,7 +251,13 @@ class ProfileRepositoryImpl with ExceptionHandler, InfraLogger implements Profil
         try {
           await tempFile.writeAsString(content);
           final task = _profileParser
-              .addLocal(id: id, content: content, tempFilePath: tempFile.path, userOverride: userOverride)
+              .addLocal(
+                id: id,
+                content: content,
+                tempFilePath: tempFile.path,
+                userOverride: userOverride,
+                active: activate,
+              )
               .flatMap(
                 (profEntity) =>
                     validateConfig(

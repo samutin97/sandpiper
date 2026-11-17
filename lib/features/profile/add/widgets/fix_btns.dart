@@ -7,6 +7,7 @@ import 'package:gap/gap.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/features/profile/add/import_preview.dart';
 import 'package:hiddify/features/profile/add/widgets/widgets.dart';
 import 'package:hiddify/features/profile/notifier/profile_notifier.dart';
 import 'package:hiddify/utils/utils.dart';
@@ -37,7 +38,7 @@ class FixBtns extends ConsumerWidget {
             icon: Icons.content_paste,
             onTap: () async {
               final cr = await Clipboard.getData(Clipboard.kTextPlain).then((value) => value?.text ?? '');
-              ref.read(addProfileNotifierProvider.notifier).addClipboard(cr);
+              ref.read(addProfileNotifierProvider.notifier).addClipboard(cr, source: ImportSource.clipboard);
             },
           ),
           const Gap(AddProfileModalConst.fixBtnsGap),
@@ -65,7 +66,7 @@ class FixBtns extends ConsumerWidget {
               if (picked.extension?.toLowerCase() == 'zip') {
                 notifier.addArchive(bytes, name: picked.name.replaceFirst(RegExp(r'\.zip$', caseSensitive: false), ''));
               } else {
-                notifier.addClipboard(decodeTextBytes(bytes));
+                notifier.addClipboard(decodeTextBytes(bytes), source: ImportSource.file);
               }
             },
           ),
@@ -79,7 +80,7 @@ class FixBtns extends ConsumerWidget {
               onTap: () async {
                 final cr = await ref.read(dialogNotifierProvider.notifier).showQrScanner();
                 if (cr == null) return;
-                ref.read(addProfileNotifierProvider.notifier).addClipboard(cr);
+                ref.read(addProfileNotifierProvider.notifier).addClipboard(cr, source: ImportSource.qrCode);
               },
             ),
           ],

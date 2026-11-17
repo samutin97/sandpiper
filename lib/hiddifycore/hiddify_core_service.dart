@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:grpc/grpc.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
@@ -11,6 +13,7 @@ import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/log/model/log_level.dart' as config_log_level;
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
+import 'package:hiddify/hiddifycore/core_interface/core_interface_mobile.dart';
 import 'package:hiddify/hiddifycore/core_interface/core_interface_wrapper_stub.dart'
     if (dart.library.io) 'package:hiddify/hiddifycore/core_interface/core_interface_wrapper.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcommon/common.pb.dart';
@@ -97,7 +100,9 @@ class HiddifyCoreService with InfraLogger {
       _statusListener++;
       try {
         final directories = ref.read(appDirectoriesProvider).requireValue;
-        final debug = kDebugMode || ref.read(ConfigOptions.logLevel).isVerbose;
+        // M-02: only a debug build. The log level must not switch the core's debug mode: in the core
+        // of upstream it opened pprof on localhost:6060, with no authentication, and logged the config.
+        const debug = kDebugMode;
         // 1 = GRPC_NORMAL (mTLS); 3 = GRPC_NORMAL_INSECURE
         final setupResponse = await core.setup(directories, debug, 1);
 
@@ -131,9 +136,14 @@ class HiddifyCoreService with InfraLogger {
     });
   }
 
+  /// The options last sent to the core, sent again to the VPN service's core right before its start
+  /// (D-01).
+  SingboxConfigOption? _lastOptions;
+
   TaskEither<String, Unit> changeOptions(SingboxConfigOption options) {
     return TaskEither(() async {
       loggy.debug("changing options");
+      _lastOptions = options;
       // latestOptions = options;
       try {
         if (core.managesLifecycle) {
@@ -199,6 +209,18 @@ class HiddifyCoreService with InfraLogger {
       }
       // the user disconnected while the start was being prepared
       if (_stopRequests.value != stops) return right(unit);
+      // D-01: the VPN service's core gets the app's options right before its start. The ones sent
+      // earlier reach it only when it was already up; a debug build started it with the core's
+      // defaults (no TUN, the mixed port 12334) and showed "Connected".
+      if (_lastOptions case final options?) {
+        try {
+          await core.bgClient.changeHiddifySettings(
+            ChangeHiddifySettingsRequest(hiddifySettingsJson: jsonEncode(options.toJson())),
+          );
+        } on GrpcError catch (e) {
+          loggy.warning("could not send the options to the background core: $e");
+        }
+      }
       try {
         final outcome = await _startAndWait(
           stops,
@@ -208,6 +230,12 @@ class HiddifyCoreService with InfraLogger {
         );
         ref.read(coreRestartSignalProvider.notifier).restart();
         if (outcome case CoreStopped(alert: _?)) return left(_startFailure(outcome));
+        // D-01: in VPN mode "connected" only with a TUN; never a proxy-only core shown as a VPN
+        if (!await _tunUpIfVpn()) {
+          loggy.error("the core started but no VPN interface was created: stopping");
+          await stop().run();
+          return left(const ConnectionFailure.unexpected("the VPN interface was not created"));
+        }
       } on GrpcError catch (e) {
         loggy.error("failed to start bg core: $e");
         ref.read(coreRestartSignalProvider.notifier).restart();
@@ -219,6 +247,22 @@ class HiddifyCoreService with InfraLogger {
 
       return right(unit);
     });
+  }
+
+  /// D-01: on Android in VPN mode, whether the VPN service holds an established TUN (asked for up to
+  /// 10 s after the core reported started); true elsewhere.
+  Future<bool> _tunUpIfVpn() async {
+    if (!Platform.isAndroid || core is! CoreInterfaceMobile) return true;
+    if (!(_lastOptions?.enableTun ?? true)) return true;
+    for (var i = 0; i < 20; i++) {
+      try {
+        if (await CoreInterfaceMobile.methodChannel.invokeMethod<bool>('tun_established') ?? false) return true;
+      } on MissingPluginException {
+        return true;
+      } catch (_) {}
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    return false;
   }
 
   /// Sends a start or restart and returns how it ended. The core answers at once and reports the

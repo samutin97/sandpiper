@@ -9,7 +9,6 @@ import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/region.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
-import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/hiddifycore/generated/v2/config/route_rule.pb.dart';
 import 'package:hiddify/utils/utils.dart';
@@ -17,7 +16,11 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'rules_notifier.g.dart';
 
-const _geoUrl = 'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set';
+/// Where the region and block rule sets come from: upstream's hiddify-geo by default, or the source
+/// set in the routing settings (ConfigOptions.ruleSetSource), such as the user's own server. The core
+/// downloads them through the tunnel, never directly.
+const defaultGeoRuleSetSource = 'https://raw.githubusercontent.com/hiddify/hiddify-geo/rule-set';
+String _geoUrl = defaultGeoRuleSetSource;
 const _geositeUrl = 'https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set';
 
 /// Rules the app ships with, in the order a new list starts with. They are always in the list: the user can
@@ -160,6 +163,8 @@ class RulesNotifier extends _$RulesNotifier with AppLogger {
   @override
   List<Rule> build() {
     final directories = ref.watch(appDirectoriesProvider).requireValue;
+    final source = ref.watch(ConfigOptions.ruleSetSource).trim();
+    _geoUrl = source.startsWith('https://') ? source.replaceAll(RegExp(r'/+$'), '') : defaultGeoRuleSetSource;
     file = File('${directories.baseDir.path}/route_rule.proto');
     // the region rule goes with Other and comes back with any other region; a list never saved is still the
     // default one, so it keeps the default order (the intro sets the region on a new install)
@@ -254,7 +259,7 @@ class RulesNotifier extends _$RulesNotifier with AppLogger {
     try {
       final routeRules = RouteRule(rules: state);
       final base64Data = base64.encode(utf8.encode(jsonEncode(routeRules.writeToJson())));
-      await Clipboard.setData(ClipboardData(text: 'hiddify:///settings/routing-options?routeRule=$base64Data'));
+      await Clipboard.setData(ClipboardData(text: 'route-rules?routeRule=$base64Data'));
       ref.read(inAppNotificationControllerProvider).showSuccessToast(t.common.msg.export.clipboard.success);
       return true;
     } on PlatformException {
@@ -278,27 +283,6 @@ class RulesNotifier extends _$RulesNotifier with AppLogger {
       return await importRules(encodedBase64);
     } catch (e, st) {
       loggy.warning("error importing route rules from clipboard", e, st);
-      ref.read(inAppNotificationControllerProvider).showErrorToast(t.common.msg.import.failure);
-      return false;
-    }
-  }
-
-  //import deep link
-  Future<bool> importRulesFromDeepLink(String encodedBase64) async {
-    final t = ref.read(translationsProvider).requireValue;
-    try {
-      final isConfirmed = await ref
-          .read(dialogNotifierProvider.notifier)
-          .showConfirmation(
-            title: t.dialogs.confirmation.importRouteRuleByDeepLinkWarning.title,
-            message: t.dialogs.confirmation.importRouteRuleByDeepLinkWarning.message,
-          );
-      if (isConfirmed) {
-        return await importRules(encodedBase64);
-      }
-      return false;
-    } catch (e, st) {
-      loggy.warning("error importing route rules from deep link", e, st);
       ref.read(inAppNotificationControllerProvider).showErrorToast(t.common.msg.import.failure);
       return false;
     }

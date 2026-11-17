@@ -113,7 +113,7 @@ class ProxyRepositoryImpl with ExceptionHandler, InfraLogger implements ProxyRep
       for (final (url, parse) in sources) {
         try {
           loggy.debug("getting current ip info using [$url]");
-          final response = await client.get<Map<String, dynamic>>(url, cancelToken: cancelToken, proxyOnly: true);
+          final response = await client.get<Map<String, dynamic>>(url, cancelToken: cancelToken, tunnelOnly: true);
           if (response.statusCode == 200 && response.data != null) {
             return parse(response.data!);
           }

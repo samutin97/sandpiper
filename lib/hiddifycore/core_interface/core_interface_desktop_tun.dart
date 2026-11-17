@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:grpc/grpc.dart';
 import 'package:hiddify/core/model/directories.dart';
+import 'package:hiddify/core/model/environment.dart';
 import 'package:hiddify/hiddifycore/core_interface/admin_permission_refused.dart';
 import 'package:hiddify/hiddifycore/core_interface/appimage_service.dart';
 import 'package:hiddify/hiddifycore/core_interface/core_interface.dart';
@@ -196,6 +197,8 @@ class CoreInterfaceDesktopTun extends CoreInterfaceDesktop {
 
     _status.add(const CoreStatus.starting());
     try {
+      // B-02: never a SYSTEM service of the portable build's folder (see VpnServiceFailure.portable)
+      if (Platform.isWindows && Environment.isPortable) throw VpnServiceFailure.portable;
       final ensure = _isAppImage
           ? _startAppImageServiceAndAttach(
               path: path,

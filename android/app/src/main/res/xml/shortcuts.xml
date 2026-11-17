@@ -7,7 +7,7 @@
         android:shortcutShortLabel="@string/quick_toggle">
         <intent
             android:action="android.intent.action.MAIN"
-            android:targetClass="com.hiddify.hiddify.ShortcutActivity"
-            android:targetPackage="app.hiddify.com" />
+            android:targetClass="app.sandpiperbird.android.ToggleActivity"
+            android:targetPackage="app.sandpiperbird.android" />
     </shortcut>
 </shortcuts>

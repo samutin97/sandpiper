@@ -97,15 +97,15 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
           }
           return '/home';
         } else if (url != null && Uri.parse(url).host == 'import') {
-          // Auto import profile from url
+          // Import a profile from the link: the sheet asks before anything is downloaded
           WidgetsBinding.instance.addPostFrameCallback(
             (_) => ref.read(bottomSheetsNotifierProvider.notifier).showAddProfile(url: url, triggeredByDeepLink: true),
           );
           return '/home';
         } else if (url != null) {
-          final uri = Uri.parse(url);
-          final path = uri.path + (uri.hasQuery ? "?${uri.query}" : "");
-          return path;
+          // H-04/M-05: a link from outside imports a profile and does nothing else; it no longer
+          // opens any page of the app (such as the route rules, with rules to import)
+          return '/home';
         } else if (state.matchedLocation.contains('chain-options') &&
             (ref.watch(hasAnyProfileProvider).value == false)) {
           // Prevent showing chainOptions while hasAnyProfile == false
@@ -188,7 +188,7 @@ class RoutingConfigNotifier extends _$RoutingConfigNotifier {
                       pageBuilder: (_, state) => customTransition(
                         TransitionType.slide,
                         state.pageKey,
-                        RoutingOptionsPage(routeRule: state.uri.queryParameters['routeRule']),
+                        const RoutingOptionsPage(),
                       ),
                       routes: <GoRoute>[
                         GoRoute(

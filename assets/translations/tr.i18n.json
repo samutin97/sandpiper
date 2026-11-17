@@ -1,6 +1,6 @@
 {
   "common": {
-    "appTitle": "Hiddify",
+    "appTitle": "Sandpiper",
     "start": "Başlat",
     "version": "Sürüm",
     "ok": "Tamam",
@@ -201,7 +201,7 @@
         "share": "Paylaş",
         "edit": "Düzenle",
         "shareTitle": "Proxy'yi paylaş",
-        "configHint": "Yalnızca bu proxy ve üzerinden bağlandığı proxy'ler. Hiddify bunu her yapılandırma gibi içe aktarır.",
+        "configHint": "Yalnızca bu proxy ve üzerinden bağlandığı proxy'ler. Sandpiper bunu her yapılandırma gibi içe aktarır.",
         "editTitle": "Yeni profil olarak düzenle",
         "editMsg": "“${name}” düzenleyebileceğiniz yeni bir profile kopyalanır. Abonelik her güncellemede proxy'lerini değiştirdiği için orijinal olduğu gibi kalır.",
         "editConfirm": "Kopyala ve düzenle",
@@ -221,7 +221,7 @@
         "received": "Telefonundan alındı",
         "from": "Gönderen: $address",
         "page": {
-          "title": "TV'deki Hiddify'a gönder",
+          "title": "TV'deki Sandpiper'a gönder",
           "intro": "Kumandayla yazmadan, dört kısa adımda TV'ye abonelik ekle.",
           "steps": {
             "network": {
@@ -260,7 +260,7 @@
       "updateSubscriptions": "Abonelikleri güncelle",
       "share": {
         "title": "Profili paylaş",
-        "scanHint": "Bu profili eklemek için başka bir cihazda Hiddify ile tarayın",
+        "scanHint": "Bu profili eklemek için başka bir cihazda Sandpiper ile tarayın",
         "link": "Abonelik bağlantısı",
         "config": "Yapılandırma",
         "configHint": "Bu profilin çalıştığı tam JSON, ayarlarınız dahil",
@@ -271,9 +271,9 @@
         "tooLargeToCopy": "Pano için çok büyük: dosya olarak paylaşın veya kaydedin",
         "toTv": {
           "button": "TV'ye gönder",
-          "scanHint": "TV'de Hiddify'ı açın, profil eklemek için + düğmesine dokunun, sonra görünen kodu tarayın. İki cihaz da aynı Wi-Fi ağında olmalı.",
+          "scanHint": "TV'de Sandpiper'ı açın, profil eklemek için + düğmesine dokunun, sonra görünen kodu tarayın. İki cihaz da aynı Wi-Fi ağında olmalı.",
           "sent": "Gönderildi. Eklemek için TV'de İçe aktar'a basın.",
-          "notTvCode": "Bu bir Hiddify TV kodu değil. Kodu göstermek için TV'de + düğmesine dokunarak profil ekleyin.",
+          "notTvCode": "Bu bir Sandpiper TV kodu değil. Kodu göstermek için TV'de + düğmesine dokunarak profil ekleyin.",
           "expired": "TV artık bu kodla bağlantı almıyor. TV'de profil ekleme ekranını yeniden açın ve yeni kodu tarayın.",
           "busy": "TV'de çok fazla bağlantı bekliyor. Bunları TV'de içe aktarın veya silin, sonra tekrar deneyin.",
           "unreachable": "TV'ye ulaşılamadı. Telefonun ve TV'nin aynı Wi-Fi ağında olduğundan emin olun."
@@ -930,7 +930,7 @@
       "updateNow": "Şimdi güncelle",
       "downloading": "İndiriliyor…",
       "installing": "Yükleyici başlatılıyor…",
-      "allowInstall": "Açılan ayarlarda Hiddify'ın uygulama yüklemesine izin verin, sonra tekrar deneyin.",
+      "allowInstall": "Açılan ayarlarda Sandpiper'ın uygulama yüklemesine izin verin, sonra tekrar deneyin.",
       "failed": "Güncelleme yüklenemedi.",
       "openPage": "Sürüm sayfasını aç",
       "tryAgain": "Tekrar dene"
@@ -977,7 +977,7 @@
         "someApps": "Tarayıcılar ve çoğu uygulama",
         "switched": "Sistem proxy'si moduna geçildi. Bunu Ayarlar'dan değiştirebilirsiniz.",
         "waitingTitle": "Yönetici izni bekleniyor",
-        "waitingMsg": "Hiddify, VPN modunu onaylamanızı bekliyor.",
+        "waitingMsg": "Sandpiper, VPN modunu onaylamanızı bekliyor.",
         "waitingWhere": "Açılan pencerede:",
         "waitingWindows": "“Evet”e tıklayın.",
         "waitingMac": "Mac parolanızı girin ve onaylayın.",
@@ -994,7 +994,7 @@
         "helpProsTitle": "Artıları",
         "helpConsTitle": "Dikkat edin",
         "helpVpn": {
-          "what": "Hiddify bilgisayarınıza sanal bir ağ ekler ve her uygulamanın internet trafiği kendiliğinden bunun üzerinden geçer: tarayıcılar, Telegram, oyunlar, güncellemeler ve diğerleri. Her uygulamada ayrıca bir şey ayarlamanız gerekmez.",
+          "what": "Sandpiper bilgisayarınıza sanal bir ağ ekler ve her uygulamanın internet trafiği kendiliğinden bunun üzerinden geçer: tarayıcılar, Telegram, oyunlar, güncellemeler ve diğerleri. Her uygulamada ayrıca bir şey ayarlamanız gerekmez.",
           "pros": [
             "Her uygulama Hiddify üzerinden geçer, uygulamalarda ayar yapmak gerekmez.",
             "Telegram ve oyunlar gibi proxy ayarlarını yok sayan uygulamalar da çalışır.",
@@ -1006,7 +1006,7 @@
           ]
         },
         "helpSystemProxy": {
-          "what": "Hiddify bilgisayarınızın proxy ayarını değiştirir. Web tarayıcıları gibi bu ayarı izleyen uygulamalar trafiğini Hiddify üzerinden gönderir; diğerleri Hiddify kapalıymış gibi doğrudan bağlanır.",
+          "what": "Sandpiper bilgisayarınızın proxy ayarını değiştirir. Web tarayıcıları gibi bu ayarı izleyen uygulamalar trafiğini Sandpiper üzerinden gönderir; diğerleri Sandpiper kapalıymış gibi doğrudan bağlanır.",
           "pros": [
             "Yönetici izni gerekmez.",
             "Açıp kapatması hızlıdır ve bağlantıyı kestiğinizde Hiddify ayarı eski haline getirir.",
@@ -1041,7 +1041,7 @@
       "msg": "Başlayalım. VPN sunucu bilgilerinizle bir bağlantı profili ekleyin.\n\nHenüz sunucunuz yok mu? Sorun değil. Aşağıdaki rehber ücretsiz bir tane kurmayı gösteriyor.",
       "helpBtn": {
         "label": "Nasıl yapıldığını göster",
-        "url": "https://hiddify.com/manager/"
+        "url": "https://github.com/hiddify/Hiddify-Manager"
       }
     },
     "unknownDomainsWarning": {
@@ -1196,16 +1196,16 @@
     },
     "dbNewerThanApp": {
       "title": "Kayıtlı veriler daha yeni bir sürümden",
-      "msg": "Profilleriniz ve ayarlarınız Hiddify'ın daha yeni bir sürümü tarafından kaydedildi ve bu eski sürüm bunları okuyamıyor. Korumak için en son sürümü yükleyin veya bu sürümü kullanmak için silin.",
+      "msg": "Profilleriniz ve ayarlarınız Sandpiper'ın daha yeni bir sürümü tarafından kaydedildi ve bu eski sürüm bunları okuyamıyor. Korumak için en son sürümü yükleyin veya bu sürümü kullanmak için silin.",
       "deleteData": "Verileri sil",
       "deleteConfirm": "Kayıtlı veriler silinir. Abonelikleriniz ve yerel profilleriniz mümkün olduğunca geri eklenir; daha yeni sürümün kaydettiği diğer her şey kaybolur.",
       "downloadLatest": "En son sürümü indir"
     },
     "dbBroken": {
       "title": "Kayıtlı veriler açılamıyor",
-      "msg": "Hiddify kayıtlı profillerini açamadı. Baştan başlamak için kayıtlı verileri silin: abonelikleriniz ve yerel profilleriniz mümkün olduğunca geri eklenir, ayarlarınız korunur.",
+      "msg": "Sandpiper kayıtlı profillerini açamadı. Baştan başlamak için kayıtlı verileri silin: abonelikleriniz ve yerel profilleriniz mümkün olduğunca geri eklenir, ayarlarınız korunur.",
       "wipeData": "Verileri sil",
-      "wipeConfirm": "Kayıtlı veriler silinir ve Hiddify baştan başlar. Hâlâ okunabilen profiller geri eklenir; gerisi kurtarılamaz.",
+      "wipeConfirm": "Kayıtlı veriler silinir ve Sandpiper baştan başlar. Hâlâ okunabilen profiller geri eklenir; gerisi kurtarılamaz.",
       "copyError": "Hatayı kopyala"
     },
     "telegramChannel": {

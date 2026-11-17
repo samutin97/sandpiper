@@ -23,6 +23,7 @@ class AppBasedRouting extends _$AppBasedRouting with AppLogger {
   Future<void> build() async {
     ref.listen(ConfigOptions.region, (_, _) => _onRegionChanged());
     final phonePkgs = (await InstalledApps.getInstalledApps(excludeSystemApps: false, excludeNonLaunchableApps: false, detectPlatformType: false)).map((e) => e.packageName).toSet();
+    _installed = phonePkgs;
     _includeSubscription = ref
         .read(appProxyDataSourceProvider)
         .watchActivePackages(phonePkgs: phonePkgs, mode: AppProxyMode.include)
@@ -40,6 +41,8 @@ class AppBasedRouting extends _$AppBasedRouting with AppLogger {
     });
     await _autoSelectionUpdate();
   }
+
+  Set<String> _installed = const {};
 
   AppProxyMode? get _mode => ref.read(Preferences.perAppProxyModeInUse);
 
@@ -94,8 +97,8 @@ class AppBasedRouting extends _$AppBasedRouting with AppLogger {
   Future<void> _autoSelectionUpdate() async {
     final mode = _mode;
     if (!_autoOn || mode == null) return;
-    final lastUpdate = ref.read(Preferences.autoAppsSelectionLastUpdate);
-    if (lastUpdate != null && DateTime.now().difference(lastUpdate) < const Duration(days: 1)) return;
+    // the list is the app's own (no download): applied at each start, so apps installed since are
+    // taken by its prefixes
     await _loading(() => _applyAutoSelection(mode));
   }
 
@@ -106,7 +109,9 @@ class AppBasedRouting extends _$AppBasedRouting with AppLogger {
     // the region or the mode changed while the list loaded, and that change already settled auto selection
     if (ref.read(ConfigOptions.region) != region || ref.read(Preferences.perAppProxyMode) != mode) return;
     if (result == AutoSelectionResult.success) {
-      await ref.read(appProxyDataSourceProvider).applyAutoSelection(autoList: list!, mode: mode);
+      await ref
+          .read(appProxyDataSourceProvider)
+          .applyAutoSelection(autoList: expandAppList(list!, _installed), mode: mode);
       await ref.read(Preferences.autoAppsSelectionRegion.notifier).update(region);
       await ref.read(Preferences.autoAppsSelectionLastUpdate.notifier).update(DateTime.now());
     } else if (result == AutoSelectionResult.notFound) {
@@ -120,6 +125,23 @@ class AppBasedRouting extends _$AppBasedRouting with AppLogger {
     loggy.info('Clearing auto selected');
     await ref.read(appProxyDataSourceProvider).clearAutoSelected(mode: mode);
     await ref.read(Preferences.autoAppsSelectionRegion.notifier).update(null);
+  }
+
+  /// Item 8: how many installed apps the built-in list for the region would keep out of the VPN.
+  Future<Set<String>> installedFromBuiltinList() async {
+    final region = ref.read(ConfigOptions.region);
+    final (list, result) = await ref
+        .read(autoSelectionRepoProvider)
+        .getByAppProxyMode(mode: AppProxyMode.exclude, region: region);
+    if (result != AutoSelectionResult.success) return {};
+    return expandAppList(list!, _installed).intersection(_installed);
+  }
+
+  /// Item 8: keeps the built-in list's apps out of the VPN (exclude mode, auto selection on).
+  Future<void> excludeBuiltinList() async {
+    await ref.read(Preferences.perAppProxyMode.notifier).update(AppProxyMode.exclude);
+    await ref.read(Preferences.autoAppsSelectionOffByUser.notifier).update(false);
+    await setEnabled(true);
   }
 
   Future<void> _loading(Future<void> Function() operation) =>

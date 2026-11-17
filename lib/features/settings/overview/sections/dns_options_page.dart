@@ -39,6 +39,15 @@ class DnsOptionsPage extends HookConsumerWidget {
             icon: Icons.public_rounded,
             value: ref.watch(ConfigOptions.directDnsAddress),
             preferences: ref.watch(ConfigOptions.directDnsAddress.notifier),
+            presentValue: (value) => value == 'local' ? t.fork.dns.system : value,
+          ),
+          // the resolvers of the VPN servers' names (hardened core)
+          ValuePreferenceWidget(
+            title: t.fork.dns.serverTitle,
+            icon: Icons.dns_rounded,
+            value: ref.watch(ConfigOptions.serverDnsAddress),
+            preferences: ref.watch(ConfigOptions.serverDnsAddress.notifier),
+            presentValue: (value) => value == ConfigOptions.defaultServerDns ? t.fork.dns.serverDefault : value,
           ),
           ChoicePreferenceWidget(
             selected: ref.watch(ConfigOptions.directDnsDomainStrategy),

@@ -27,6 +27,9 @@ class SingboxConfigOption with _$SingboxConfigOption {
     required String remoteDnsAddress,
     required DomainStrategy remoteDnsDomainStrategy,
     required String directDnsAddress,
+
+    /// The resolvers of the VPN servers' names (hardened core), comma-separated.
+    @Default('') String serverDnsAddress,
     required DomainStrategy directDnsDomainStrategy,
     required int mixedPort,
     required int tproxyPort,
@@ -62,6 +65,10 @@ class SingboxConfigOption with _$SingboxConfigOption {
     @IntervalInSecondsConverter() required Duration urlTestInterval,
     required bool enableClashApi,
     required int clashApiPort,
+
+    /// M-01/HC-04: the Clash API listens on no port (hardened core: `clash-api-listen`; ignored on
+    /// phones there anyway). The app reads traffic, connections and delays over gRPC, never the Clash API.
+    @Default(false) bool clashApiListen,
     required bool enableTun,
 
     /// Router mode (`router-mode`): the TUN, for the whole network this Linux device routes.
@@ -74,6 +81,45 @@ class SingboxConfigOption with _$SingboxConfigOption {
     required int lanSharingPort,
     required bool localProxyAuth,
     required bool localProxyInVpn,
+
+    /// H-06 (hardened core): the local proxy's user and password (>= 16), and whether it relays UDP.
+    @Default('') String localProxyUsername,
+    @Default('') String localProxyPassword,
+    @Default(false) bool localProxyUdp,
+
+    /// P26 (hardened core): the TUN addresses come from this seed, not 172.19.0.1/28.
+    @Default('') String tunAddressSeed,
+
+    /// M-08/P13/P14 (hardened core): how many proxies are tested at once, and which after a network
+    /// change: no burst of handshakes to every server.
+    @Default(2) int monitoringWorkers,
+    @Default('selected') String retestOnNetworkChange,
+
+    /// P13: no IP/country lookups by the core (the exit IP is checked only when the user asks).
+    @Default(false) bool ipinfo,
+
+    /// P19: the core does not download subscription links nested in a profile; the app does, through
+    /// the tunnel, after the import dialog.
+    @Default(false) bool expandSubscriptionLinks,
+
+    /// P2: TLS that checks no certificate (insecure=1) without a pinned certificate is refused.
+    @Default(false) bool allowInsecure,
+
+    /// P21: `classical` for a ClientHello without the post-quantum share (not REALITY); "" as the
+    /// fingerprint has it.
+    @Default('') String tlsKeyShare,
+
+    /// AmneziaWG/WireGuard proxies (UDP) are not in the automatic choice: picked by hand.
+    @Default(false) bool udpEndpointsInAuto,
+
+    /// Item 8 (hardened core): split tunnelling, the same list the app gives VpnService.Builder:
+    /// `off`, `include` or `exclude`.
+    @Default('off') String perAppProxyMode,
+    @Default(<String>[]) List<String> perAppProxyList,
+
+    /// Leak B (hardened core, Android 10+): flows whose owner is not covered by the VPN are dropped,
+    /// such as an excluded app that binds its socket to tun0.
+    @Default(true) bool perAppStrict,
     required bool enableFakeDns,
     // required bool enableDnsRouting,
     required bool independentDnsCache,

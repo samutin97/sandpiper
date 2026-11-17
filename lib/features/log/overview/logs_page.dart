@@ -2,6 +2,7 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hiddify/core/localization/translations.dart';
+import 'package:hiddify/core/logger/log_scrubber.dart';
 import 'package:hiddify/core/logger/logger_setup.dart';
 import 'package:hiddify/core/logger/ring/log_ring.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
@@ -478,7 +479,7 @@ class _LogRow extends ConsumerWidget {
     );
     if (picked != true) return;
 
-    await Clipboard.setData(ClipboardData(text: formatRecord(record)));
+    await Clipboard.setData(ClipboardData(text: scrubSecrets(formatRecord(record))));
     ref.read(inAppNotificationControllerProvider).showSuccessToast(t.common.msg.export.clipboard.success);
   }
 

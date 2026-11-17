@@ -1,6 +1,9 @@
 # .ONESHELL:
 include dependencies.properties
 
+# H-09: release builds by default (lib/main_prod.dart); the core is never the floating `draft`
+CHANNEL ?= prod
+
 # --- Log Colors ---
 blue   := \033[1;34m
 green  := \033[1;92m
@@ -49,11 +52,8 @@ CORE_PRODUCT_NAME=hiddify-core
 CORE_NAME=hiddify-lib
 LIB_NAME=hiddify-core
 
-ifeq ($(CHANNEL),prod)
-	CORE_URL=https://github.com/hiddify/hiddify-core/releases/download/v$(core.version)
-else
-	CORE_URL=https://github.com/hiddify/hiddify-core/releases/download/draft
-endif
+# the core comes from scripts/fetch-core.sh: the release v$(core.version) checked by SHA-256, or a
+# local build given as CORE_AAR/CORE_ARCHIVE with CORE_SHA256 (H-09)
 
 ifeq ($(CHANNEL),prod)
 	TARGET=lib/main_prod.dart
@@ -63,8 +63,15 @@ endif
 
 # the app's commit, 7 characters as git abbreviates it, for the diagnostics report (app_diagnostics.dart)
 APP_COMMIT:=$(shell git rev-parse --short=7 HEAD 2>/dev/null)
-BUILD_ARGS=--dart-define sentry_dsn=$(SENTRY_DSN) --dart-define commit=$(APP_COMMIT)
-DISTRIBUTOR_ARGS=--skip-clean --build-target $(TARGET) --build-dart-define sentry_dsn=$(SENTRY_DSN) --build-dart-define commit=$(APP_COMMIT)
+# Desktop builds with the fork's hardened core say so (lib/core/http_client/app_traffic.dart: the
+# app then gives the core's local proxy local-proxy-username). The release workflow sets
+# CORE_HARDENED=1 next to the core it built (.github/workflows/sandpiper-release.yml).
+ifeq ($(CORE_HARDENED),1)
+CORE_DART_DEFINE=--build-dart-define=core_hardened=true
+CORE_BUILD_DEFINE=--dart-define core_hardened=true
+endif
+BUILD_ARGS=--dart-define commit=$(APP_COMMIT) $(CORE_BUILD_DEFINE)
+DISTRIBUTOR_ARGS=--skip-clean --build-target $(TARGET) --build-dart-define commit=$(APP_COMMIT) $(CORE_DART_DEFINE)
 
 
 
@@ -282,7 +289,7 @@ android-apk-release:
 	  --skip-clean \
 	  --build-target=$(TARGET) \
 	  --build-target-platform=android-arm,android-arm64,android-x64 \
-	  --build-dart-define=sentry_dsn=$(SENTRY_DSN) --build-dart-define=commit=$(APP_COMMIT)
+	  --build-dart-define=commit=$(APP_COMMIT)
 	ls -R build/app/outputs
 
 android-aab-release:
@@ -291,7 +298,7 @@ android-aab-release:
 	  --targets aab \
 	  --skip-clean \
 	  --build-target=$(TARGET) \
-	  --build-dart-define=sentry_dsn=$(SENTRY_DSN) --build-dart-define=commit=$(APP_COMMIT) \
+	  --build-dart-define=commit=$(APP_COMMIT) \
 	  --build-dart-define=release=google-play
 
 # fastforge runs `flutter build windows` itself before packing, which re-copies fresh
@@ -314,7 +321,8 @@ windows-zip-release:
 	  --targets zip \
 	  --skip-clean \
 	  --build-target=$(TARGET) \
-	  --build-dart-define=sentry_dsn=$(SENTRY_DSN) --build-dart-define=commit=$(APP_COMMIT) \
+	  --build-dart-define=commit=$(APP_COMMIT) \
+	  $(CORE_DART_DEFINE) \
 	  --build-dart-define=portable=true \
 	  $(WINDOWS_PACKAGE_HOOK)
 # 	repacking needs Windows' own tar.exe: GNU tar from Git Bash ignores -a for .zip and writes a plain tar
@@ -325,15 +333,15 @@ windows-zip-release:
 	$(YELLOW)Post-processing Windows portable$(DONE); \
 	cd "$$ZIP_DIR"; \
 	$(BLUE)Extracting and Repacking...$(DONE); \
-	mkdir -p Hiddify; \
-	unzip -q "$$ZIP_FILE" -d Hiddify/; \
+	mkdir -p Sandpiper; \
+	unzip -q "$$ZIP_FILE" -d Sandpiper/; \
 	rm "$$ZIP_FILE"; \
 	if command -v 7z > /dev/null 2>&1; then \
-	  7z a -tzip -bso0 -bsp0 "$$FILE_NAME.zip" Hiddify; \
+	  7z a -tzip -bso0 -bsp0 "$$FILE_NAME.zip" Sandpiper; \
 	else \
-	  pwsh -NoProfile -Command "Compress-Archive -Path Hiddify -DestinationPath '$$FILE_NAME.zip' -Force"; \
+	  pwsh -NoProfile -Command "Compress-Archive -Path Sandpiper -DestinationPath '$$FILE_NAME.zip' -Force"; \
 	fi; \
-	rm -rf Hiddify; \
+	rm -rf Sandpiper; \
 	$(GREEN)Successful$(DONE)
 
 windows-exe-release:
@@ -342,7 +350,8 @@ windows-exe-release:
 	  --targets exe \
 	  --skip-clean \
 	  --build-target=$(TARGET) \
-	  --build-dart-define=sentry_dsn=$(SENTRY_DSN) --build-dart-define=commit=$(APP_COMMIT) \
+	  --build-dart-define=commit=$(APP_COMMIT) \
+	  $(CORE_DART_DEFINE) \
 	  $(WINDOWS_PACKAGE_HOOK)
 
 windows-msix-release:
@@ -351,7 +360,8 @@ windows-msix-release:
 	  --targets msix \
 	  --skip-clean \
 	  --build-target=$(TARGET) \
-	  --build-dart-define=sentry_dsn=$(SENTRY_DSN) --build-dart-define=commit=$(APP_COMMIT) \
+	  --build-dart-define=commit=$(APP_COMMIT) \
+	  $(CORE_DART_DEFINE) \
 	  $(WINDOWS_PACKAGE_HOOK)
 
 linux-release: linux-deb-release linux-rpm-release linux-appimage-release
@@ -368,7 +378,7 @@ linux-deb-release:
 	--targets deb \
 	--skip-clean \
 	--build-target=$(TARGET) \
-	--build-dart-define=sentry_dsn=$(SENTRY_DSN) --build-dart-define=commit=$(APP_COMMIT)
+	--build-dart-define=commit=$(APP_COMMIT)
 
 # Fedora, RHEL, openSUSE. The bundle's libsentry links the build host's (Ubuntu's) libcurl, whose
 # symbols carry the CURL_OPENSSL_4 version that Fedora's libcurl lacks: rpmbuild would require it
@@ -383,7 +393,7 @@ linux-rpm-release:
 	--targets rpm \
 	--skip-clean \
 	--build-target=$(TARGET) \
-	--build-dart-define=sentry_dsn=$(SENTRY_DSN) --build-dart-define=commit=$(APP_COMMIT)
+	--build-dart-define=commit=$(APP_COMMIT)
 
 
 # ==============================================================================
@@ -421,7 +431,7 @@ linux-appimage-release:
 	--targets appimage \
 	--skip-clean \
 	--build-target=$(TARGET) \
-	--build-dart-define=sentry_dsn=$(SENTRY_DSN) --build-dart-define=commit=$(APP_COMMIT)
+	--build-dart-define=commit=$(APP_COMMIT)
 	@$(YELLOW)Post-processing AppImage$(DONE)
 	bash linux/packaging/appimage/repackage.sh dist
 	@$(GREEN)Successful$(DONE)
@@ -492,53 +502,54 @@ ios-simulator-validate:
 
 android-libs:
 	$(MKDIR) $(ANDROID_OUT) || echo Folder already exists. Skipping...
-	curl -fL --retry 5 --retry-delay 5 --retry-all-errors $(CORE_URL)/$(CORE_NAME)-android.tar.gz | tar xz -C $(ANDROID_OUT)/
+	bash scripts/fetch-core.sh android $(ANDROID_OUT)
 
 android-apk-libs: android-libs
 android-aab-libs: android-libs
 
 windows-libs:
 	$(MKDIR) $(DESKTOP_OUT) || echo Folder already exists. Skipping...
-	curl -fL --retry 5 --retry-delay 5 --retry-all-errors $(CORE_URL)/$(CORE_NAME)-windows-amd64.tar.gz | tar xz -C $(DESKTOP_OUT)/
+	bash scripts/fetch-core.sh windows-amd64 $(DESKTOP_OUT)
 	ls $(DESKTOP_OUT) || dir $(DESKTOP_OUT)/
 	
 
 linux-amd64-libs:
 	mkdir -p $(DESKTOP_OUT)
-	curl -fL --retry 5 --retry-delay 5 --retry-all-errors $(CORE_URL)/$(CORE_NAME)-linux-amd64.tar.gz | tar xz -C $(DESKTOP_OUT)/
+	bash scripts/fetch-core.sh linux-amd64 $(DESKTOP_OUT)
 
 linux-arm64-libs:
 	mkdir -p $(DESKTOP_OUT)
-	curl -fL --retry 5 --retry-delay 5 --retry-all-errors $(CORE_URL)/$(CORE_NAME)-linux-arm64.tar.gz | tar xz -C $(DESKTOP_OUT)/
+	bash scripts/fetch-core.sh linux-arm64 $(DESKTOP_OUT)
 
 linux-amd64-musl-libs:
 	mkdir -p $(DESKTOP_OUT)
-	curl -fL --retry 5 --retry-delay 5 --retry-all-errors $(CORE_URL)/$(CORE_NAME)-linux-amd64-musl.tar.gz | tar xz -C $(DESKTOP_OUT)/
+	bash scripts/fetch-core.sh linux-amd64-musl $(DESKTOP_OUT)
 
 linux-arm64-musl-libs:
 	mkdir -p $(DESKTOP_OUT)
-	curl -fL --retry 5 --retry-delay 5 --retry-all-errors $(CORE_URL)/$(CORE_NAME)-linux-arm64-musl.tar.gz | tar xz -C $(DESKTOP_OUT)/
+	bash scripts/fetch-core.sh linux-arm64-musl $(DESKTOP_OUT)
 
 
 macos-libs:
 	mkdir -p $(DESKTOP_OUT) macos/Frameworks
-	curl -fL --retry 5 --retry-delay 5 --retry-all-errors $(CORE_URL)/$(CORE_NAME)-macos.tar.gz | tar xz -C $(DESKTOP_OUT)
+	bash scripts/fetch-core.sh macos $(DESKTOP_OUT)
 	# Tunnel bind ships in the same tarball (built by hiddify-core `make macos`).
 	test -d $(DESKTOP_OUT)/HiddifyTunnelCore.xcframework
 	rm -rf macos/Frameworks/HiddifyTunnelCore.xcframework
 	mv $(DESKTOP_OUT)/HiddifyTunnelCore.xcframework macos/Frameworks/
 	touch macos/Frameworks/HiddifyTunnelCore.xcframework/.downloaded
-	# The core helper (macos/scripts/embed-core-helper.sh) is built from the shared C launcher. CI
-	# does not check out the submodule, so take that file from the commit the app pins.
+	# The core helper (macos/scripts/embed-core-helper.sh) is built from the shared C launcher. Without
+	# the submodule checked out, take that file from the commit the app pins, in the repository
+	# .gitmodules names (the fork's own core).
 	test -f hiddify-core/cmd/launcher/main.c || { \
 		mkdir -p hiddify-core/cmd/launcher && \
 		curl -fL --retry 5 --retry-delay 5 --retry-all-errors -o hiddify-core/cmd/launcher/main.c \
-			https://raw.githubusercontent.com/hiddify/hiddify-core/$$(git rev-parse HEAD:hiddify-core)/cmd/launcher/main.c; }
+			"$$(git config -f .gitmodules submodule.hiddify-core.url | sed -e 's#\.git$$##' -e 's#^https://github.com/#https://raw.githubusercontent.com/#')/$$(git rev-parse HEAD:hiddify-core)/cmd/launcher/main.c"; }
 
 ios-libs: #not tested
 	mkdir -p $(IOS_OUT)
 	rm -rf $(IOS_OUT)/HiddifyCore.xcframework
-	curl -fL --retry 5 --retry-delay 5 --retry-all-errors $(CORE_URL)/$(CORE_NAME)-ios.tar.gz | tar xz -C "$(IOS_OUT)"
+	bash scripts/fetch-core.sh ios "$(IOS_OUT)"
 
 get-geo-assets:
 	echo ""

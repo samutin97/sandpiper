@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="app_name" translatable="false">Sandpiper</string>
+    <string name="notification_channel">Connection</string>
     <string name="stop">Stop</string>
     <string name="quick_toggle">Toggle</string>
     <string name="status_starting">Connecting…</string>

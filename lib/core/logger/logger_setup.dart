@@ -5,7 +5,6 @@
 // listeners as we like, so each destination is just a subscription we can
 // attach or cancel.
 //
-// Sentry is added separately, see sinks/sentry_sink.dart.
 
 import 'dart:async';
 import 'dart:developer' as dev;

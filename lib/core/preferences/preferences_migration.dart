@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:hiddify/core/utils/proxy_secret.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -18,6 +20,8 @@ class PreferencesMigration with InfraLogger {
       PreferencesVersion3Migration(sharedPreferences),
       PreferencesVersion4Migration(sharedPreferences),
       PreferencesVersion5Migration(sharedPreferences),
+      ForkVersion1Migration(sharedPreferences),
+      ForkVersion2Migration(sharedPreferences),
     ];
 
     if (currentVersion == migrationSteps.length) {
@@ -179,5 +183,57 @@ class PreferencesVersion5Migration extends PreferencesMigrationStep with InfraLo
   @override
   Future<void> migrate() async {
     await sharedPreferences.remove("use-xray-core-when-possible");
+  }
+}
+
+/// Sandpiper (H-06, M-01, P26): what each install gets once.
+/// - the local proxy's user name (8 letters) and a secret of 16 characters at least, as the hardened
+///   core asks (local-proxy-password >= 16, lan-sharing-password >= 8): one secret serves both;
+/// - a random local proxy port instead of 12334, which scanners know;
+/// - the seed of the TUN addresses (tun-address-seed), instead of the recognisable 172.19.0.1/28.
+class ForkVersion1Migration extends PreferencesMigrationStep with InfraLogger {
+  ForkVersion1Migration(super.sharedPreferences);
+
+  @override
+  Future<void> migrate() async {
+    final random = Random.secure();
+    if ((sharedPreferences.getString("lan_sharing_password") ?? '').replaceAll('-', '').length < 16) {
+      await sharedPreferences.setString("lan_sharing_password", generateProxySecret(length: 16));
+    }
+    if ((sharedPreferences.getString("local-proxy-username") ?? '').isEmpty) {
+      const letters = 'abcdefghijklmnopqrstuvwxyz';
+      final name = List.generate(8, (_) => letters[random.nextInt(letters.length)]).join();
+      await sharedPreferences.setString("local-proxy-username", name);
+    }
+    final port = sharedPreferences.getInt("mixed-port");
+    if (port == null || port == 12334) {
+      await sharedPreferences.setInt("mixed-port", 20000 + random.nextInt(40000));
+    }
+    if ((sharedPreferences.getString("tun-address-seed") ?? '').isEmpty) {
+      final seed = List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+      await sharedPreferences.setString("tun-address-seed", seed);
+    }
+  }
+}
+
+/// Sandpiper (B-05): a random Clash API port instead of 16756, which scanners of the loopback know.
+/// The hardened core opens no Clash API port (clash-api-listen is off). The official 5.9.8 core
+/// opens it, with a random secret, while enable-clash-api is on, and turning that off there drops
+/// the URL tests and the cache file as well (v2/config/builder.go, setExperimental): so the port is
+/// moved instead. A port the user chose is kept.
+class ForkVersion2Migration extends PreferencesMigrationStep with InfraLogger {
+  ForkVersion2Migration(super.sharedPreferences);
+
+  @override
+  Future<void> migrate() async {
+    final port = sharedPreferences.getInt("clash-api-port");
+    if (port != null && port != 16756) return;
+    final random = Random.secure();
+    final mixed = sharedPreferences.getInt("mixed-port");
+    int candidate;
+    do {
+      candidate = 20000 + random.nextInt(40000);
+    } while (candidate == mixed);
+    await sharedPreferences.setInt("clash-api-port", candidate);
   }
 }

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- No cleartext HTTP from the Java/Kotlin side, 127.0.0.1 included: the gRPC channel to the core is
+     mutual TLS (the insecure mode is refused), and nothing else needs plain HTTP. -->
 <network-security-config>
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">127.0.0.1</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="false" />
 </network-security-config>

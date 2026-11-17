@@ -17,7 +17,8 @@ class AutoStartNotifier extends _$AutoStartNotifier with InfraLogger {
     if (!PlatformUtils.isDesktop) return false;
     final appInfo = ref.watch(appInfoProvider).requireValue;
     // Must equal identity_name in windows/packaging/msix/make_config.yaml.
-    const packageName = "Hiddify.App.Win";
+    // (an MSIX is told by its folder under WindowsApps, which starts with this name)
+    const packageName = "Sandpiper.App.Win";
     final isWindowsRegistry = Platform.isWindows && !Platform.resolvedExecutable.contains('WindowsApps');
     // An entry written by an older version has neither quotes nor --autostart: rewrite it, or
     // the switch shows off while Windows still launches it, and that launch shows the window.

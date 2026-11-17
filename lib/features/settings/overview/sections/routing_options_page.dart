@@ -18,28 +18,21 @@ import 'package:hiddify/features/app_based_routing/overview/auto_selection_notif
 import 'package:hiddify/features/route_rules/notifier/rules_notifier.dart';
 import 'package:hiddify/features/route_rules/widget/rule_tile.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
+import 'package:hiddify/features/settings/widget/preference_tile.dart';
 import 'package:hiddify/singbox/model/singbox_config_enum.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class RoutingOptionsPage extends HookConsumerWidget {
-  const RoutingOptionsPage({super.key, required this.routeRule});
-
-  // Import route rule from deep link
-  final String? routeRule;
+  // H-04/M-05: route rules are imported only from the clipboard or a file the user picks here,
+  // never from a link another app opens.
+  const RoutingOptionsPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(translationsProvider).requireValue;
     final rules = ref.watch(rulesNotifierProvider);
 
-    useMemoized(() {
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        if (routeRule != null && context.mounted) {
-          await ref.read(rulesNotifierProvider.notifier).importRulesFromDeepLink(routeRule!);
-        }
-      });
-    });
     return Scaffold(
       appBar: AppBar(
         title: Text(t.pages.settings.routing.title),
@@ -514,6 +507,16 @@ class _PinnedOptions extends ConsumerWidget {
           present: (value) => value.present(t),
           onSelected: ref.read(ConfigOptions.defaultProxy.notifier).update,
           describe: (value) => value.describe(t),
+        ),
+        divider,
+        // where the region's rule sets come from (downloaded by the core through the tunnel)
+        ValuePreferenceWidget(
+          value: ref.watch(ConfigOptions.ruleSetSource),
+          preferences: ref.watch(ConfigOptions.ruleSetSource.notifier),
+          title: t.fork.ruleSetSource.title,
+          icon: Icons.cloud_sync_rounded,
+          presentValue: (value) => value.isEmpty ? t.fork.ruleSetSource.upstream : value,
+          validateInput: (value) => value.isEmpty || value.startsWith('https://'),
         ),
         divider,
         SwitchListTile.adaptive(

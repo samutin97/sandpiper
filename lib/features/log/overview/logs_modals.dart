@@ -5,6 +5,7 @@ import 'package:fluentui_system_icons/fluentui_system_icons.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hiddify/core/localization/translations.dart';
+import 'package:hiddify/core/logger/log_scrubber.dart';
 import 'package:hiddify/core/logger/logger_setup.dart';
 import 'package:hiddify/core/logger/ring/log_ring.dart';
 import 'package:hiddify/core/logger/sinks/file_sink.dart';
@@ -194,7 +195,8 @@ Future<void> _copyLines(
   required Translations t,
   required InAppNotificationController notifications,
 }) async {
-  final text = records.map(formatRecord).join('\n');
+  // M-02: no links, keys, UUIDs or addresses leave the app with the log
+  final text = scrubSecrets(records.map(formatRecord).join('\n'));
 
   try {
     await Clipboard.setData(ClipboardData(text: text));
@@ -213,7 +215,7 @@ Future<void> _exportLines(
 }) async {
   final target = paths.appExportFile();
 
-  await writeLinesToFile(target.path, records.map(formatRecord));
+  await writeLinesToFile(target.path, records.map((r) => scrubSecrets(formatRecord(r))));
   await saveFileAs(target, t: t, notifications: notifications);
 }
 

@@ -3,25 +3,29 @@ import 'package:flutter/services.dart';
 import 'package:hiddify/utils/utils.dart';
 
 abstract class Constants {
-  static const appName = "Hiddify";
-  static const githubUrl = "https://github.com/hiddify/hiddify-next";
-  static const licenseUrl = "https://github.com/hiddify/hiddify-next?tab=License-1-ov-file#readme";
-  static const githubReleasesApiUrl = "https://api.github.com/repos/hiddify/hiddify-app/releases";
-  static const githubLatestReleaseUrl = "https://github.com/hiddify/hiddify-app/releases/latest";
-  static const telegramChannelUrl = "https://t.me/hiddify";
-  static const telegramChannelHandle = "@hiddify";
+  static const appName = "Sandpiper";
 
-  /// Opens the channel in the Telegram app; [telegramChannelUrl] when the app is not there.
-  static const telegramChannelAppUrl = "tg://resolve?domain=hiddify";
-  static const bugReportEmail = "bug@hiddify.com";
+  /// Attribution (LICENSE.md, clause 3): the app is a fork of Hiddify, under Hiddify's license.
+  static const upstreamName = "Hiddify";
+  static const githubUrl = "https://github.com/hiddify/hiddify-app";
+  static const licenseUrl = "https://github.com/hiddify/hiddify-app/blob/main/LICENSE.md";
 
-  /// The bot that turns a report into an issue; the app starts it with the device's details
-  /// (telegram_report_link.dart).
-  static const bugReportTelegramBot = "hiddify_issues_bot";
-  static const bugReportTelegramName = "@$bugReportTelegramBot";
-  static const bugReportGithubIssueUrl = "https://github.com/hiddify/hiddify-app/issues/new";
-  static const privacyPolicyUrl = "https://hiddify.com/privacy-policy/";
-  static const termsAndConditionsUrl = "https://hiddify.com/terms/";
+  /// The fork's own source code (GPL v3 section 6, and clause 1 of LICENSE.md: the public fork the
+  /// releases are built from); another fork gives its own at build time (--dart-define=source_url=...).
+  static const forkUrl = "https://github.com/samutin97/sandpiper";
+  static const sourceUrl = String.fromEnvironment("source_url", defaultValue: forkUrl);
+  // no update check in the fork (Release.allowCustomUpdateChecker)
+  static const githubReleasesApiUrl = "";
+  static const githubLatestReleaseUrl = sourceUrl;
+  // The fork sends no report anywhere: a report is only saved or shared by the user. No Telegram
+  // channel, no bot, no mail address of Hiddify's team.
+  static const bugReportEmail = "";
+  static const bugReportTelegramBot = "";
+  static const bugReportTelegramName = "";
+  static const bugReportGithubIssueUrl = "";
+  // the fork's terms are its license; it keeps no data of its users
+  static const privacyPolicyUrl = sourceUrl;
+  static const termsAndConditionsUrl = licenseUrl;
   static const cfWarpPrivacyPolicy = "https://www.cloudflare.com/application/privacypolicy/";
   static const cfWarpTermsOfService = "https://www.cloudflare.com/application/terms/";
 }

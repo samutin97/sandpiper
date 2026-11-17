@@ -1024,8 +1024,8 @@ class _Ctx {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The Hi logo, from assets/images/logo.svg, in its 64 × 64 units, in four parts: the short bar with
-// the crossbar, the tall bar, the stem and the dot
+// The app's mark in 64 x 64 units, in four parts the animation lights one after another: three
+// columns of a dune (the first two in one path, split by their clips), and the sun
 
 Path _svgPath(String d) {
   final path = Path();
@@ -1069,47 +1069,30 @@ Path _svgPath(String d) {
 }
 
 abstract final class _HiLogo {
-  static final dot = _svgPath(
-    'M47.1582 14.4283C47.1582 13.8368 47.4684 13.2886 47.9757 12.9842L61.4494 4.89891C62.5721 4.22529 64.0003 '
-    '5.03389 64.0003 6.34306V20.2103C64.0003 21.1405 63.2461 21.8945 62.3161 21.8945H48.8424C47.9124 21.8945 '
-    '47.1582 21.1405 47.1582 20.2103V14.4283Z',
-  );
+  static final dot = _svgPath('M54 5C58.418 5 62 8.582 62 13C62 17.418 58.418 21 54 21C49.582 21 46 17.418 46 13C46 8.582 49.582 5 54 5Z');
 
-  static final h = _svgPath(
-    'M24.3966 26.4593C23.8893 26.7637 23.5789 27.3118 23.5789 27.9034V43.7921L23.5789 45.4751L23.5789 45.4763L23.5789 '
-    '48.0001C23.5789 48.9301 22.8249 49.6001 21.8947 49.6001H18.5263C17.5962 49.6001 16.8421 48.9301 16.8421 48.0001V '
-    '45.4751V34.976C16.8421 33.6669 15.4139 32.8583 14.2913 33.5319L0.817607 41.6171C0.310362 41.9216 0 42.4696 0 '
-    '43.0615V60.6342C0 61.5642 0.754048 62.3184 1.68421 62.3184H15.1579C16.0881 62.3184 16.8421 61.5642 16.8421 '
-    '60.6342V58.9488V56.8314C16.8421 55.9011 17.5962 55.3376 18.5263 55.3376H21.8947C22.8249 55.3376 23.5789 55.9011 '
-    '23.5789 56.8314V58.9488L23.5789 60.6342C23.5789 61.5642 24.333 62.3184 25.2632 62.3184H38.7368C39.6669 62.3184 '
-    '40.4211 61.5642 40.4211 60.6342V45.4763V43.7921V19.8182C40.4211 18.509 38.9928 17.7004 37.8701 18.374L24.3966 '
-    '26.4593Z',
-  )..fillType = PathFillType.evenOdd;
+  static final h = _svgPath('M0 40C6 32 13 29 19 30V62H0ZM22 30.5C28 32 35 37 41 38V62H22Z');
 
-  static final stem = _svgPath(
-    'M47.1592 28.7999V60.7999C47.1592 61.6836 47.9132 62.3999 48.8434 62.3999H62.3171C63.2472 62.3999 64.0013 61.6836 '
-    '64.0013 60.7999V28.7999C64.0013 27.9162 63.2472 27.1999 62.3171 27.1999H48.8434C47.9132 27.1999 47.1592 27.9162 '
-    '47.1592 28.7999Z',
-  );
+  static final stem = _svgPath('M44 38C51 38 58 33 64 30V62H44Z');
 
   static final all = Path.combine(PathOperation.union, Path.combine(PathOperation.union, h, stem), dot);
 
   static Path pathOf(int part) => part < 2 ? h : (part == 2 ? stem : dot);
 
   static Rect clipOf(int part) => switch (part) {
-    0 => const Rect.fromLTRB(-2, -2, 23.58, 66),
-    1 => const Rect.fromLTRB(23.58, -2, 42, 66),
+    0 => const Rect.fromLTRB(-2, -2, 20.5, 66),
+    1 => const Rect.fromLTRB(20.5, -2, 42.5, 66),
     _ => const Rect.fromLTRB(-2, -2, 66, 66),
   };
 
-  static const tops = [32.9, 18.2, 27.2, 4.2];
-  static const bottoms = [62.32, 62.32, 62.4, 21.9];
-  static const centersX = [8.4, 32.0, 55.6, 55.6];
+  static const tops = [29.0, 30.5, 30.0, 5.0];
+  static const bottoms = [62.0, 62.0, 62.0, 21.0];
+  static const centersX = [9.5, 31.5, 54.0, 54.0];
 
-  /// The signal bar each part belongs to: the stem and the dot are the third.
+  /// The signal bar each part belongs to: the third column and the sun are the third.
   static const bar = [0, 1, 2, 2];
 
-  /// The order the parts light up in: the dot just after the stem.
+  /// The order the parts light up in: the sun just after the third column.
   static const rank = [0.0, 1.0, 2.0, 2.6];
 }
 

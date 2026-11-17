@@ -7,6 +7,7 @@ import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/model/constants.dart';
+import 'package:hiddify/features/profile/add/import_preview.dart';
 import 'package:hiddify/features/profile/add/phone_import/phone_import_notifier.dart';
 import 'package:hiddify/features/profile/add/phone_import/phone_import_panel.dart';
 import 'package:hiddify/features/profile/add/phone_import/phone_import_server.dart';
@@ -18,9 +19,12 @@ import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 class AddProfileModal extends HookConsumerWidget {
-  const AddProfileModal({super.key, this.url});
+  const AddProfileModal({super.key, this.url, this.source = ImportSource.clipboard});
   // static const warpConsentGiven = "warp_consent_given";
   final String? url;
+
+  /// Where [url] came from, for the import dialog.
+  final ImportSource source;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -49,7 +53,7 @@ class AddProfileModal extends HookConsumerWidget {
       await Future.delayed(const Duration(milliseconds: 200));
       if (url != null && context.mounted) {
         if (isLoading) return;
-        ref.read(addProfileNotifierProvider.notifier).addClipboard(url!);
+        ref.read(addProfileNotifierProvider.notifier).addClipboard(url!, source: source);
       }
     });
     return SafeArea(
@@ -69,7 +73,10 @@ class AddProfileModal extends HookConsumerWidget {
     );
     if (!context.mounted) return;
     ref.read(phoneImportProvider.notifier).handled(entry);
-    if (import ?? false) await ref.read(addProfileNotifierProvider.notifier).addClipboard(entry.text);
+    // the phone's entry was shown and accepted in its own dialog
+    if (import ?? false) {
+      await ref.read(addProfileNotifierProvider.notifier).addClipboard(entry.text, source: ImportSource.phone);
+    }
   }
 }
 

@@ -3,8 +3,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hiddify/core/http_client/dio_http_client.dart';
+import 'package:hiddify/core/model/app_info_entity.dart';
 
-const _appAgent = 'HiddifyNext/9.9.9 (android) like ClashMeta v2ray sing-box';
+const _appAgent = 'HiddifyNext/9.9.9 (android)';
 
 void main() {
   late HttpServer server;
@@ -67,5 +68,25 @@ void main() {
 
     expect(seen, [_appAgent, _appAgent]);
     expect(seen.where((agent) => agent?.startsWith('Dart') ?? true), isEmpty);
+  });
+
+  group('the subscription user agent', () {
+    test('is the minimum Hiddify Manager needs for the hiddify-core format', () {
+      expect(AppInfoEntity.userAgentFor('5.9.8', 'android'), 'HiddifyNext/5.9.8 (android)');
+    });
+
+    test('carries the upstream version, not the fork suffix', () {
+      expect(AppInfoEntity.userAgentFor('5.9.8-sp.1', 'android'), 'HiddifyNext/5.9.8 (android)');
+      expect(AppInfoEntity.upstreamVersion('5.9.8-sp.1+50908'), '5.9.8');
+    });
+
+    test('matches the panel patterns', () {
+      final ua = AppInfoEntity.userAgentFor('5.9.8-sp.1', 'android');
+      // hiddifypanel/proxy_v3/client_core_auto.py: hiddify-core + singbox
+      expect(RegExp('^(HiddifyNext|Dart|SFI|SFA)', caseSensitive: false).hasMatch(ua), isTrue);
+      // hutils/flask.py: the version after the slash, >= 5 for the newest features
+      final version = RegExp(r'/(\d+\.\d+(\.\d+)?)').firstMatch(ua)!.group(1)!;
+      expect(int.parse(version.split('.').first), greaterThanOrEqualTo(5));
+    });
   });
 }

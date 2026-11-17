@@ -108,10 +108,37 @@ void main() {
     );
   });
 
-  test('every install gets a proxy secret, and one set is kept', () async {
+  // the fork (ForkVersion1Migration): the hardened core asks for a secret of 16 characters at least
+  test('every install gets a proxy secret of 16 characters, a long one set is kept', () async {
     final fresh = await _migrated({});
-    expect(fresh.getString('lan_sharing_password'), matches(RegExp(r'^\w{4}-\w{4}$')));
-    final kept = await _migrated({'lan_sharing_password': 'mine-secret'});
-    expect(kept.getString('lan_sharing_password'), 'mine-secret');
+    expect(fresh.getString('lan_sharing_password'), matches(RegExp(r'^\w{4}-\w{4}-\w{4}-\w{4}$')));
+    final kept = await _migrated({'lan_sharing_password': 'mine-long-enough-secret'});
+    expect(kept.getString('lan_sharing_password'), 'mine-long-enough-secret');
+    final short = await _migrated({'lan_sharing_password': 'mine-secret'});
+    expect(short.getString('lan_sharing_password')!.replaceAll('-', '').length, greaterThanOrEqualTo(16));
+  });
+
+  test('every install gets its own proxy user, a random local port and a TUN address seed', () async {
+    final a = await _migrated({});
+    final b = await _migrated({});
+    expect(a.getString('local-proxy-username'), matches(RegExp(r'^[a-z]{8}$')));
+    expect(a.getInt('mixed-port'), allOf(greaterThanOrEqualTo(20000), lessThan(60000)));
+    expect(a.getString('tun-address-seed'), matches(RegExp(r'^[0-9a-f]{32}$')));
+    expect(a.getString('tun-address-seed'), isNot(b.getString('tun-address-seed')));
+    final kept = await _migrated({'mixed-port': 2080});
+    expect(kept.getInt('mixed-port'), 2080);
+    final moved = await _migrated({'mixed-port': 12334});
+    expect(moved.getInt('mixed-port'), isNot(12334));
+  });
+
+  // the fork (ForkVersion2Migration, B-05): no Clash API on the well-known 16756
+  test('every install gets a random Clash API port apart from the local proxy, a chosen one is kept', () async {
+    final fresh = await _migrated({});
+    expect(fresh.getInt('clash-api-port'), allOf(greaterThanOrEqualTo(20000), lessThan(60000)));
+    expect(fresh.getInt('clash-api-port'), isNot(fresh.getInt('mixed-port')));
+    final moved = await _migrated({'clash-api-port': 16756});
+    expect(moved.getInt('clash-api-port'), isNot(16756));
+    final kept = await _migrated({'clash-api-port': 9090});
+    expect(kept.getInt('clash-api-port'), 9090);
   });
 }

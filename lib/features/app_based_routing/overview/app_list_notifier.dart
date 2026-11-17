@@ -130,8 +130,8 @@ class AppList extends _$AppList with AppLogger {
     }
   }
 
-  /// Opens a new issue for the region's list, filled with the apps you added to it and the auto picks
-  /// you removed. The share sheet has already shown both lists, so nothing asks again here.
+  /// Copies the apps you added to the region's list and the auto picks you removed, to share them by
+  /// hand. The share sheet has already shown both lists, so nothing asks again here.
   Future<void> shareOnGithub({required List<String> added, required List<String> removed}) async {
     final t = ref.read(translationsProvider).requireValue;
     final region = ref.read(ConfigOptions.region);
@@ -139,9 +139,10 @@ class AppList extends _$AppList with AppLogger {
     final title = '${region.name} | ${mode.present(t)}';
     final body =
         '```\n${const JsonEncoder.withIndent('  ').convert({'addedPkgs': added, 'removedPkgs': removed})}\n```';
-    await UriUtils.tryLaunch(
-      Uri.https('github.com', '/hiddify/Android-GFW-Apps/issues/new', {'title': title, 'body': body}),
-    );
+    // The fork publishes nothing: upstream opened a public issue on github.com/hiddify/Android-GFW-Apps
+    // with the apps the user keeps in or out of the VPN. The text goes to the clipboard instead.
+    await Clipboard.setData(ClipboardData(text: '$title\n$body'));
+    ref.read(inAppNotificationControllerProvider).showSuccessToast(t.common.msg.export.clipboard.success);
   }
 
   Future<void> _importJson(String input) async {
