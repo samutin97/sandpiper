@@ -22,9 +22,33 @@ Future<CoreInfoResponse> startOnceStopped(
   }
 }
 
+/// A call needed the core, and it is not running: its setup failed, with [reason], or has not run.
+/// It replaces the LateInitializationError of the clients, which told the user nothing ("Field
+/// 'fgClient' has not been initialized" on importing a profile while the core's port was taken).
+class CoreNotRunning implements Exception {
+  const CoreNotRunning([this.reason]);
+
+  final String? reason;
+
+  @override
+  String toString() {
+    final why = reason;
+    return why == null || why.isEmpty ? 'The core is not running' : 'The core is not running: $why';
+  }
+}
+
 class CoreInterface {
-  late CoreClient fgClient;
-  late CoreClient bgClient;
+  CoreClient? _fgClient;
+  CoreClient? _bgClient;
+
+  /// Why the core's last setup failed, until one succeeds; the reason a call that needs the core gives.
+  String? setupFailure;
+
+  CoreClient get fgClient => _fgClient ?? (throw CoreNotRunning(setupFailure));
+  set fgClient(CoreClient client) => _fgClient = client;
+
+  CoreClient get bgClient => _bgClient ?? (throw CoreNotRunning(setupFailure));
+  set bgClient(CoreClient client) => _bgClient = client;
 
   bool get managesLifecycle => false;
   bool get persistsAfterAppExit => false;
@@ -76,7 +100,7 @@ class CoreInterface {
 
   bool isSingleChannel() {
     // return true;
-    return fgClient == bgClient;
+    return _fgClient == _bgClient;
   }
 
   /// Whether the two channels reach one core process, so its log comes down both of them. On
@@ -99,12 +123,5 @@ class CoreInterface {
     return true;
   }
 
-  bool isInitialized() {
-    try {
-      final _ = bgClient; // Check whether the late client field has been initialized.
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
+  bool isInitialized() => _bgClient != null;
 }

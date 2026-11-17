@@ -1490,6 +1490,9 @@
       "system": "Системный резолвер (Android, «Частный DNS»)",
       "serverTitle": "Резолвер имён серверов",
       "serverDefault": "Cloudflare, Quad9, Google по HTTPS по IP, затем системный"
+    },
+    "core": {
+      "notRunning": "Ядро не запущено: ${reason}"
     }
   }
 }

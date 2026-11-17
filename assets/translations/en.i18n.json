@@ -1466,6 +1466,9 @@
       "system": "System resolver (Android, Private DNS)",
       "serverTitle": "Resolver of the servers' names",
       "serverDefault": "Cloudflare, Quad9, Google over HTTPS by IP, then the system"
+    },
+    "core": {
+      "notRunning": "The core is not running: ${reason}"
     }
   }
 }

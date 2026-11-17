@@ -8,11 +8,13 @@ import 'package:flutter/services.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:grpc/grpc.dart';
 import 'package:hiddify/core/directories/directories_provider.dart';
+import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/logger/core_logger.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/log/model/log_level.dart' as config_log_level;
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
+import 'package:hiddify/hiddifycore/core_interface/core_interface.dart';
 import 'package:hiddify/hiddifycore/core_interface/core_interface_mobile.dart';
 import 'package:hiddify/hiddifycore/core_interface/core_interface_wrapper_stub.dart'
     if (dart.library.io) 'package:hiddify/hiddifycore/core_interface/core_interface_wrapper.dart';
@@ -57,7 +59,7 @@ class HiddifyCoreService with InfraLogger {
           loggy.error(e);
           if (PlatformUtils.isIOS) return;
           statusController.add(const CoreStatus.stopped());
-          ref.read(inAppNotificationControllerProvider).showErrorToast(e);
+          ref.read(inAppNotificationControllerProvider).showErrorToast(_notRunning(e));
         })
         .map((_) {
           loggy.info("Hiddify-core setup done");
@@ -74,6 +76,7 @@ class HiddifyCoreService with InfraLogger {
 
   TaskEither<String, Unit> validateConfigByPath(String path, String tempPath, bool debug) {
     return TaskEither(() async {
+      if (await _coreUnavailable() case final reason?) return left(reason);
       try {
         final response = await core.fgClient.parse(ParseRequest(tempPath: tempPath, configPath: path, debug: false));
         if (response.responseCode != ResponseCode.OK) return left("${response.responseCode} ${response.message}");
@@ -88,6 +91,7 @@ class HiddifyCoreService with InfraLogger {
 
   TaskEither<String, String> generateFullConfigByPath(String path) {
     return TaskEither(() async {
+      if (await _coreUnavailable() case final reason?) return left(reason);
       final response = await core.fgClient.parse(ParseRequest(configPath: path, debug: false));
       if (response.responseCode != ResponseCode.OK) return left("${response.responseCode} ${response.message}");
       return right(response.content);
@@ -107,8 +111,10 @@ class HiddifyCoreService with InfraLogger {
         final setupResponse = await core.setup(directories, debug, 1);
 
         if (setupResponse.isNotEmpty) {
+          core.setupFailure = setupResponse;
           return left(setupResponse);
         }
+        core.setupFailure = null;
 
         await startListeningLogs("fg", core.fgClient);
         if (core.clientChanges != null && !subscriptions.containsKey('managedClients')) {
@@ -131,9 +137,26 @@ class HiddifyCoreService with InfraLogger {
         // ref.read(coreRestartSignalProvider.notifier).restart();
         return right(unit);
       } catch (e) {
+        core.setupFailure = e.toString();
         return left(e.toString());
       }
     });
+  }
+
+  /// "The core is not running: [reason]", as the user reads it.
+  String _notRunning(String reason) {
+    final t = ref.read(translationsProvider).valueOrNull;
+    return t?.fork.core.notRunning(reason: reason) ?? CoreNotRunning(reason).toString();
+  }
+
+  /// Null when the core runs. Else it is set up once more (its setup failed at launch: its port was
+  /// taken, it crashed) and, when that fails too, why, as the user reads it: an import or a connect
+  /// then says "the core is not running" and why, instead of the LateInitializationError of a
+  /// client that was never made.
+  Future<String?> _coreUnavailable() async {
+    if (core.isInitialized()) return null;
+    final retried = await setup().run();
+    return retried.match(_notRunning, (_) => null);
   }
 
   /// The options last sent to the core, sent again to the VPN service's core right before its start
@@ -144,6 +167,7 @@ class HiddifyCoreService with InfraLogger {
     return TaskEither(() async {
       loggy.debug("changing options");
       _lastOptions = options;
+      if (await _coreUnavailable() case final reason?) return left(reason);
       // latestOptions = options;
       try {
         if (core.managesLifecycle) {
@@ -176,6 +200,10 @@ class HiddifyCoreService with InfraLogger {
       latest = OutboundGroupList();
       statusController.add(currentState = const CoreStatus.starting());
       loggy.debug("starting");
+      if (await _coreUnavailable() case final reason?) {
+        statusController.add(currentState = const CoreStatus.stopped());
+        return left(ConnectionFailure.unexpected(reason));
+      }
       if (core.managesLifecycle) {
         try {
           await core.startManaged(path, name, disableMemoryLimit);
