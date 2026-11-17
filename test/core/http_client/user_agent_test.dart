@@ -71,13 +71,39 @@ void main() {
   });
 
   group('the subscription user agent', () {
-    test('is the minimum Hiddify Manager needs for the hiddify-core format', () {
-      expect(AppInfoEntity.userAgentFor('5.9.8', 'android'), 'HiddifyNext/5.9.8 (android)');
+    test('is the minimum Hiddify Manager needs for the hiddify-core format, then the capability token', () {
+      expect(AppInfoEntity.userAgentFor('5.9.8', 'android'), 'HiddifyNext/5.9.8 (android) awg31');
     });
 
     test('carries the upstream version, not the fork suffix', () {
-      expect(AppInfoEntity.userAgentFor('5.9.8-sp.1', 'android'), 'HiddifyNext/5.9.8 (android)');
-      expect(AppInfoEntity.upstreamVersion('5.9.8-sp.1+50908'), '5.9.8');
+      expect(AppInfoEntity.userAgentFor('5.9.8-sp.4', 'android'), 'HiddifyNext/5.9.8 (android) awg31');
+      expect(AppInfoEntity.upstreamVersion('5.9.8-sp.4+50911'), '5.9.8');
+    });
+
+    test('is the same on every platform but for the system name, and not the one of upstream Hiddify', () {
+      for (final os in ['android', 'ios', 'windows', 'macos', 'linux']) {
+        final ua = AppInfoEntity.userAgentFor('5.9.8-sp.4', os);
+        expect(ua, 'HiddifyNext/5.9.8 ($os) awg31');
+        expect(ua, isNot(contains('like ClashMeta')));
+      }
+    });
+
+    test('passes the server gate for the AmneziaWG node: three space-separated words', () {
+      // how a subscription server can gate the node: "HiddifyNext/<v>", "(<os>)", then nothing or "awg31"
+      bool gate(String ua) {
+        final p = ua.split(' ');
+        return (p.length == 2 || (p.length == 3 && p[2] == 'awg31')) &&
+            p[0].startsWith('HiddifyNext/') &&
+            p[1].startsWith('(') &&
+            p[1].endsWith(')');
+      }
+
+      expect(gate(AppInfoEntity.userAgentFor('5.9.8-sp.4', 'android')), isTrue);
+      // the prefix without the token is what earlier builds sent, recognised as before
+      expect(AppInfoEntity.userAgentFor('5.9.8-sp.4', 'android').startsWith('HiddifyNext/5.9.8 (android)'), isTrue);
+      // one more word (a proxy on the way that marks the request) or upstream's suffix: no node
+      expect(gate('${AppInfoEntity.userAgentFor('5.9.8', 'android')} marked'), isFalse);
+      expect(gate('HiddifyNext/5.9.8 (android) like ClashMeta v2ray sing-box'), isFalse);
     });
 
     test('matches the panel patterns', () {
