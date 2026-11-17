@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:dartx/dartx.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:hiddify/features/profile/data/profile_parser.dart';
+import 'package:hiddify/features/profile/model/profile_probe.dart';
 
 part 'profile_entity.freezed.dart';
 part 'profile_entity.g.dart';
@@ -44,6 +45,9 @@ sealed class ProfileEntity with _$ProfileEntity {
 
   String profileOverride() =>
       ProfileParser.profileOverride(populatedHeaders: populatedHeaders, userOverride: userOverride);
+
+  /// The path check's endpoints the subscription's server gave (`profile-probe`), if any.
+  ProfileProbe? get probe => ProfileProbe.parse(populatedHeaders?[ProfileProbe.headerName]);
 }
 
 @freezed

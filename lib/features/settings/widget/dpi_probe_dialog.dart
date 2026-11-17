@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
+import 'package:hiddify/features/profile/model/profile_probe.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/hiddifycore/dpi_probe.dart';
 import 'package:hiddify/hiddifycore/hiddify_core_service_provider.dart';
@@ -14,7 +15,11 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 /// user's tap: TCP, TLS, then a download (and an upload) to a server. It dials directly, outside the
 /// VPN, as the app's own core does; so it tells whether the network cuts the ClientHello or freezes a
 /// transfer at 16 KB. By default it checks the host of the active profile's subscription with the
-/// test paths entered here (a GET of the first 64 KiB of a file and a POST), both kept as settings.
+/// test paths that subscription's server gave (`profile-probe`, [ProfileProbe]); without them, the
+/// paths typed here last time (kept as settings).
+///
+/// SP3-01: the progress and the result are shown first, above the form, which folds while a check
+/// runs; the button shows the progress too. Nothing the user waits for is below the fold.
 class DpiProbeDialog extends HookConsumerWidget {
   const DpiProbeDialog({super.key});
 
@@ -32,12 +37,22 @@ class DpiProbeDialog extends HookConsumerWidget {
     final running = useState(false);
     final elapsed = useState(0);
     final result = useState<String?>(null);
+    final formOpen = useState(true);
+    final fromProfile = useState<ProfileProbe?>(null);
+    final scroll = useScrollController();
 
-    // the host of the active profile's subscription, the server's own test endpoints are there
+    // the host of the active profile's subscription and the test paths its server gave
     useEffect(() {
       ref.read(activeProfileProvider.future).then((profile) {
+        if (!context.mounted) return;
         if (profile case RemoteProfileEntity(:final url) when host.text.isEmpty) {
           host.text = Uri.tryParse(url)?.host ?? '';
+        }
+        if (profile?.probe case final probe?) {
+          path.text = probe.getPath;
+          uploadPath.text = probe.postPath ?? '';
+          upload.value = probe.canUpload;
+          fromProfile.value = probe;
         }
       });
       return null;
@@ -48,8 +63,16 @@ class DpiProbeDialog extends HookConsumerWidget {
       running.value = true;
       result.value = null;
       elapsed.value = 0;
-      await ref.read(Preferences.dpiProbeDownloadPath.notifier).update(path.text.trim());
-      await ref.read(Preferences.dpiProbeUploadPath.notifier).update(uploadPath.text.trim());
+      formOpen.value = false;
+      if (scroll.hasClients) {
+        unawaited(scroll.animateTo(0, duration: const Duration(milliseconds: 200), curve: Curves.easeOut));
+      }
+      // what the user typed is kept for the next time; the subscription's own paths are not copied
+      final probe = fromProfile.value;
+      if (probe == null || path.text.trim() != probe.getPath || uploadPath.text.trim() != (probe.postPath ?? '')) {
+        await ref.read(Preferences.dpiProbeDownloadPath.notifier).update(path.text.trim());
+        await ref.read(Preferences.dpiProbeUploadPath.notifier).update(uploadPath.text.trim());
+      }
       final started = DateTime.now();
       final ticker = Timer.periodic(const Duration(seconds: 1), (_) {
         elapsed.value = DateTime.now().difference(started).inSeconds;
@@ -80,46 +103,90 @@ class DpiProbeDialog extends HookConsumerWidget {
       }
     }
 
+    final theme = Theme.of(context);
+    final pathsNote = fromProfile.value != null
+        ? s.fromProfile
+        : path.text.trim().isEmpty
+        ? s.noPaths
+        : null;
+
     return AlertDialog(
       title: Text(s.title),
       content: SingleChildScrollView(
+        controller: scroll,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(s.msg, style: Theme.of(context).textTheme.bodySmall),
-            TextField(controller: host, decoration: InputDecoration(labelText: s.host)),
-            TextField(
-              controller: port,
-              decoration: InputDecoration(labelText: s.port),
-              keyboardType: TextInputType.number,
-            ),
-            TextField(controller: sni, decoration: InputDecoration(labelText: s.sni)),
-            TextField(controller: path, decoration: InputDecoration(labelText: s.path)),
-            TextField(controller: uploadPath, decoration: InputDecoration(labelText: s.uploadPath)),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text(s.upload),
-              value: upload.value,
-              onChanged: (v) => upload.value = v,
-            ),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: Text(s.classical),
-              value: classical.value,
-              onChanged: (v) => classical.value = v,
-            ),
+            Text(s.msg, style: theme.textTheme.bodySmall),
             if (running.value) ...[
+              const SizedBox(height: 12),
               const LinearProgressIndicator(),
+              const SizedBox(height: 4),
               Text(s.running(seconds: elapsed.value)),
             ],
-            if (result.value != null) SelectableText(result.value!),
+            if (result.value != null) ...[
+              const SizedBox(height: 12),
+              Text(s.outcome, style: theme.textTheme.titleSmall),
+              const SizedBox(height: 4),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Padding(padding: const EdgeInsets.all(8), child: SelectableText(result.value!)),
+              ),
+            ],
+            const SizedBox(height: 4),
+            ListTile(
+              key: const ValueKey('dpi-probe-parameters'),
+              contentPadding: EdgeInsets.zero,
+              title: Text(s.parameters),
+              subtitle: pathsNote == null ? null : Text(pathsNote, style: theme.textTheme.bodySmall),
+              trailing: Icon(formOpen.value ? Icons.expand_less : Icons.expand_more),
+              onTap: () => formOpen.value = !formOpen.value,
+            ),
+            if (formOpen.value) ...[
+              TextField(controller: host, decoration: InputDecoration(labelText: s.host)),
+              TextField(
+                controller: port,
+                decoration: InputDecoration(labelText: s.port),
+                keyboardType: TextInputType.number,
+              ),
+              TextField(controller: sni, decoration: InputDecoration(labelText: s.sni)),
+              TextField(controller: path, decoration: InputDecoration(labelText: s.path)),
+              TextField(controller: uploadPath, decoration: InputDecoration(labelText: s.uploadPath)),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: Text(s.upload),
+                value: upload.value,
+                onChanged: (v) => upload.value = v,
+              ),
+              SwitchListTile.adaptive(
+                contentPadding: EdgeInsets.zero,
+                title: Text(s.classical),
+                value: classical.value,
+                onChanged: (v) => classical.value = v,
+              ),
+            ],
           ],
         ),
       ),
       actions: [
         TextButton(onPressed: () => Navigator.of(context).pop(), child: Text(t.common.close)),
-        FilledButton(onPressed: running.value ? null : run, child: Text(s.run)),
+        FilledButton(
+          onPressed: running.value ? null : run,
+          child: running.value
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox.square(dimension: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                    const SizedBox(width: 8),
+                    Text('${elapsed.value} s'),
+                  ],
+                )
+              : Text(s.run),
+        ),
       ],
     );
   }

@@ -1429,7 +1429,7 @@
     "dpiProbe": {
       "title": "Check the path to a server",
       "tile": "TCP, TLS and a 64 KiB transfer to a server, directly, to tell a cut ClientHello or the \"16 KB\" freeze from a server that is down. Runs only when you tap it.",
-      "msg": "A direct connection from this device (not through the VPN), at most 12 connections. By default the host of the active subscription and the server's test paths: a GET of a 200 KB file (the first 64 KiB of it), then a POST of 64 KiB.",
+      "msg": "A direct connection from this device (not through the VPN), at most 12 connections. By default the host of the active subscription and the test paths its server gives: a GET of the first 64 KiB of a file, then a POST of 64 KiB.",
       "host": "Server (IP or domain)",
       "port": "Port",
       "sni": "SNI (empty: the server)",
@@ -1440,6 +1440,9 @@
       "outcome": "Result",
       "failed": "The check failed (needs the fork's core)",
       "uploadPath": "Upload path (POST)",
+      "parameters": "Server and paths",
+      "fromProfile": "Test paths from the active subscription.",
+      "noPaths": "The active subscription gives no test paths: type the ones of your server, or the check downloads \"/\".",
       "running": "Checking... ${seconds} s",
       "noAnswer": "No answer from the check in 75 s: the core may still be waiting on the network. Try again with fewer stages.",
       "summary": "${seconds} s, ${connections} connections",

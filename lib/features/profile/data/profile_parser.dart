@@ -10,6 +10,7 @@ import 'package:hiddify/core/model/optional_range.dart';
 import 'package:hiddify/features/profile/data/profile_data_mapper.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/model/profile_failure.dart';
+import 'package:hiddify/features/profile/model/profile_probe.dart';
 import 'package:hiddify/singbox/model/singbox_config_enum.dart';
 import 'package:hiddify/singbox/model/singbox_proxy_type.dart';
 import 'package:hiddify/utils/utils.dart';
@@ -66,6 +67,7 @@ class ProfileParser with InfraLogger {
     'profile-web-page-url',
     'fragment',
     'keep-top',
+    ProfileProbe.headerName,
   ];
 
   /// Whether [url] is an https URL with a host: the only kind of subscription downloaded.
@@ -268,6 +270,8 @@ class ProfileParser with InfraLogger {
     Map<String, dynamic> remoteHeaders,
   ) {
     for (final entry in contentHeaders.entries) {
+      // the path check's endpoints come only from the server's HTTP answer, not from a text
+      if (entry.key == ProfileProbe.headerName) continue;
       if (!remoteHeaders.keys.contains(entry.key)) {
         remoteHeaders[entry.key] = entry.value;
       }
@@ -277,6 +281,11 @@ class ProfileParser with InfraLogger {
       if (allowedProfileHeaders.contains(entry.key) && entry.value != null && entry.value.toString().isNotEmpty) {
         headers[entry.key] = entry.value;
       }
+    }
+    // kept only valid, in its canonical form; anything else is dropped without a word
+    if (headers.containsKey(ProfileProbe.headerName)) {
+      final probe = ProfileProbe.parse(headers.remove(ProfileProbe.headerName));
+      if (probe != null) headers[ProfileProbe.headerName] = probe.encode();
     }
     return headers;
   }
