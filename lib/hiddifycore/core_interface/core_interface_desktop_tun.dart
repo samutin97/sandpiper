@@ -8,6 +8,7 @@ import 'package:hiddify/hiddifycore/core_interface/admin_permission_refused.dart
 import 'package:hiddify/hiddifycore/core_interface/appimage_service.dart';
 import 'package:hiddify/hiddifycore/core_interface/core_interface.dart';
 import 'package:hiddify/hiddifycore/core_interface/core_interface_desktop.dart';
+import 'package:hiddify/hiddifycore/core_interface/service_names.dart';
 import 'package:hiddify/hiddifycore/core_interface/vpn_config_snapshot.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcommon/common.pb.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/adminbgservice/admin_bg.pb.dart';
@@ -23,8 +24,12 @@ import 'package:rxdart/rxdart.dart';
 /// Windows and Linux: full core usually runs in elevated admin_bgservice
 /// (`SandpiperAdminBG` on Windows and Linux). Flutter never elevates; [NeedAdminBgService] /
 /// [EnsureAdminBgService] live in hiddify-core.
+///
+/// The service has no fixed port (upstream Hiddify's listens on 18020): it takes a free one at each
+/// start and publishes it with the certificate it presents ([ServiceEndpoint]) in its own folder,
+/// beside the control secret ([ServiceNames]); the app trusts only that certificate.
 class CoreInterfaceDesktopTun extends CoreInterfaceDesktop {
-  CoreInterfaceDesktopTun() : super(port: 17078) {
+  CoreInterfaceDesktopTun() : super() {
     _status.listen((status) {
       if (status is CoreStarted && _usingAdminBg) {
         _watchService();
@@ -34,8 +39,6 @@ class CoreInterfaceDesktopTun extends CoreInterfaceDesktop {
     });
   }
 
-  // the fork's own (upstream Hiddify's service listens on 18020): the core's adminBgServicePort
-  static const _servicePort = 18420;
   final _status = BehaviorSubject<CoreStatus>.seeded(const CoreStatus.stopped());
   final _clientChanges = StreamController<void>.broadcast();
   ClientChannel? _serviceChannel;
@@ -46,8 +49,8 @@ class CoreInterfaceDesktopTun extends CoreInterfaceDesktop {
   bool _serviceSystemProxy = false;
   bool? _privileged;
   late String _secret;
-  // the port of the service the connection runs in: the installed one, or the AppImage's own
-  int _servicePortInUse = _servicePort;
+  // where the service the connection runs in listens: the installed one, or the AppImage's own
+  ServiceEndpoint? _serviceEndpoint;
   // the AppImage's VPN service, started through pkexec once and kept until the app exits
   AppImageService? _appImageService;
   // checks, while a VPN runs in the service, that the service and its engine still run
@@ -78,24 +81,12 @@ class CoreInterfaceDesktopTun extends CoreInterfaceDesktop {
   @override
   Stream<void> get clientChanges => _clientChanges.stream;
 
-  String get _cliPath {
-    final dir = p.dirname(Platform.resolvedExecutable);
-    if (!Platform.isWindows) return p.join(dir, 'HiddifyCli');
-    // Windows' console launcher is SandpiperCore.exe (the fork's name; HiddifyCli.exe in old cores).
-    final cli = p.join(dir, 'SandpiperCore.exe');
-    if (File(cli).existsSync()) return cli;
-    return p.join(dir, 'HiddifyCli.exe');
-  }
+  // the console launcher beside the app (Windows: SandpiperCore.exe; never upstream's HiddifyCli.exe)
+  String get _cliPath => p.join(p.dirname(Platform.resolvedExecutable), ServiceNames.cliName());
 
-  String get _dataDir {
-    if (Platform.isWindows) {
-      final base = Platform.environment['PROGRAMDATA'] ?? r'C:\ProgramData';
-      return p.join(base, 'Hiddify', 'AdminBgService');
-    }
-    return '/var/lib/hiddify-admin-bgservice';
-  }
-
-  String get _secretPath => p.join(_dataDir, 'control.secret');
+  // W4-03: the service's own folder, the one it writes to (ProgramData\Sandpiper\AdminBgService,
+  // /var/lib/sandpiper-admin-bgservice), not upstream Hiddify's, whose secret the app used to read
+  String get _secretPath => ServiceNames.secretPath();
 
   String get _ownerUser =>
       Platform.isWindows ? (Platform.environment['USERNAME'] ?? '') : (Platform.environment['USER'] ?? '');
@@ -283,11 +274,16 @@ class CoreInterfaceDesktopTun extends CoreInterfaceDesktop {
       );
     }
 
-    final secret = (await File(_secretPath).readAsString()).trim();
+    final secretFile = File(_secretPath);
+    final secret = await secretFile.exists() ? (await secretFile.readAsString()).trim() : '';
     if (secret.length < 32) {
       throw StateError('The VPN service secret is missing. Reinstall the VPN service.');
     }
-    await _attachService(_servicePort, secret, options);
+    final endpoint = await ServiceEndpoint.read();
+    if (endpoint == null) {
+      throw StateError('The VPN service did not publish its address. Reinstall the VPN service.');
+    }
+    await _attachService(endpoint, secret, options);
   }
 
   /// The AppImage's VPN: its own service, started as root through pkexec on the first connect and
@@ -307,11 +303,7 @@ class CoreInterfaceDesktopTun extends CoreInterfaceDesktop {
       _appImageService = service;
     }
     final snapshot = await snapshotVpnConfiguration(path, workingDirectory);
-    final channel = ClientChannel(
-      '127.0.0.1',
-      port: AppImageService.port,
-      options: const ChannelOptions(credentials: ChannelCredentials.insecure()),
-    );
+    final channel = service.endpoint.channel();
     try {
       await HiddifyAdminBGClient(channel, options: CallOptions(metadata: {'x-hiddify-secret': service.secret})).start(
         AdminBgStartRequest(
@@ -327,20 +319,16 @@ class CoreInterfaceDesktopTun extends CoreInterfaceDesktop {
     } finally {
       unawaited(channel.shutdown());
     }
-    await _attachService(AppImageService.port, service.secret, options);
+    await _attachService(service.endpoint, service.secret, options);
   }
 
   /// Points the background client at a running VPN service, and hands its system proxy to this
   /// app's core.
-  Future<void> _attachService(int port, String secret, SingboxConfigOption options) async {
+  Future<void> _attachService(ServiceEndpoint endpoint, String secret, SingboxConfigOption options) async {
     _secret = secret;
-    _servicePortInUse = port;
+    _serviceEndpoint = endpoint;
     final old = _serviceChannel;
-    _serviceChannel = ClientChannel(
-      '127.0.0.1',
-      port: port,
-      options: const ChannelOptions(credentials: ChannelCredentials.insecure()),
-    );
+    _serviceChannel = endpoint.channel();
     bgClient = CoreClient(_serviceChannel!, options: CallOptions(metadata: {'x-hiddify-secret': _secret}));
     if (old != null) unawaited(old.shutdown());
     _usingAdminBg = true;
@@ -627,8 +615,10 @@ class CoreInterfaceDesktopTun extends CoreInterfaceDesktop {
   Future<bool> isBgClientAvailable() async {
     if (!_usingAdminBg) return identical(bgClient, fgClient) || engineClient != null;
     if (_isAppImage) return _appImageService?.running ?? false;
+    final endpoint = _serviceEndpoint;
+    if (endpoint == null) return false;
     try {
-      final socket = await Socket.connect('127.0.0.1', _servicePortInUse, timeout: const Duration(milliseconds: 200));
+      final socket = await Socket.connect(endpoint.host, endpoint.port, timeout: const Duration(milliseconds: 200));
       socket.destroy();
       return File(_secretPath).existsSync();
     } catch (_) {

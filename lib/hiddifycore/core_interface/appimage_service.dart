@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:hiddify/hiddifycore/core_interface/admin_permission_refused.dart';
+import 'package:hiddify/hiddifycore/core_interface/service_names.dart';
 import 'package:hiddify/utils/custom_loggers.dart';
 
 final _logger = infraLogger('AppImageService');
@@ -17,11 +18,15 @@ final _logger = infraLogger('AppImageService');
 /// pkexec clears the environment, so the control secret goes on the first stdin line. Stdin then
 /// stays open: it closes when the app exits, even when it is killed, and the service stops its
 /// engine (TUN, routes) and exits.
+///
+/// The service listens on a free port (upstream's AppImage service on the fixed 18021) and prints it,
+/// with the certificate it presents, before its ready line; only that certificate is trusted.
 class AppImageService {
   AppImageService._(this._process, this.secret);
 
-  static const port = 18021;
   static const _readyLine = 'HIDDIFY_SERVICE_READY';
+  static const _listenPrefix = 'HIDDIFY_SERVICE_LISTEN ';
+  static const _certificatePrefix = 'HIDDIFY_SERVICE_CERT ';
   static const _errorPrefix = 'HIDDIFY_CORE_ERROR ';
   // pkexec waits while the user types the password
   static const _readyTimeout = Duration(minutes: 5);
@@ -30,6 +35,7 @@ class AppImageService {
   final Process _process;
   final String secret;
   bool _exited = false;
+  late final ServiceEndpoint endpoint;
 
   bool get running => !_exited;
 
@@ -42,7 +48,7 @@ class AppImageService {
   /// Asks for administrator rights (pkexec, or sudo with a password dialog where pkexec is missing) and
   /// starts the service; returns once it serves.
   static Future<AppImageService> start(String appImage, int ownerPid) async {
-    final args = [appImage, 'HiddifyCli', 'core-service', '--listen', '127.0.0.1:$port', '--owner-pid', '$ownerPid'];
+    final args = [appImage, 'HiddifyCli', 'core-service', '--listen', '127.0.0.1:0', '--owner-pid', '$ownerPid'];
     final Process process;
     var viaSudo = false;
     Directory? askpassDir;
@@ -65,9 +71,26 @@ class AppImageService {
     await process.stdin.flush();
 
     final ready = Completer<void>();
+    String? listening;
+    String? certificate;
     process.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
-      if (!ready.isCompleted && line.trim() == _readyLine) {
-        ready.complete();
+      if (!ready.isCompleted && line.startsWith(_listenPrefix)) {
+        listening = line.substring(_listenPrefix.length).trim();
+      } else if (!ready.isCompleted && line.startsWith(_certificatePrefix)) {
+        try {
+          certificate = utf8.decode(base64.decode(line.substring(_certificatePrefix.length).trim()));
+        } on FormatException {
+          certificate = null;
+        }
+      } else if (!ready.isCompleted && line.trim() == _readyLine) {
+        final address = ServiceEndpoint.parseAddress(listening ?? '');
+        final pem = certificate ?? '';
+        if (address == null || !pem.contains('-----BEGIN CERTIFICATE-----')) {
+          ready.completeError(const VpnServiceFailure('The VPN service did not say where it listens.'));
+        } else {
+          service.endpoint = ServiceEndpoint(host: address.host, port: address.port, certificatePem: pem);
+          ready.complete();
+        }
       } else if (!ready.isCompleted && line.startsWith(_errorPrefix)) {
         ready.completeError(StateError(line.substring(_errorPrefix.length)));
       } else if (line.isNotEmpty) {

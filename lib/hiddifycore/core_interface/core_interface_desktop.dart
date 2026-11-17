@@ -28,7 +28,7 @@ typedef StopFunc = Pointer<Utf8> Function();
 typedef StopFuncDart = Pointer<Utf8> Function();
 
 class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
-  CoreInterfaceDesktop({this.port = 17078});
+  CoreInterfaceDesktop();
   static final HiddifyCoreNativeLibrary _box = _gen();
 
   // Exposed for macOS/desktop mTLS smoke tests.
@@ -65,8 +65,9 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
   static HiddifyCoreNativeLibrary _open(String path) => HiddifyCoreNativeLibrary(DynamicLibrary.open(path));
 
   /// The Go setup blocks until the core has loaded its data and started its server, so it runs in
-  /// an isolate of its own: the UI isolate must not wait for it.
-  static Future<String> _setupNative(
+  /// an isolate of its own: the UI isolate must not wait for it. It returns the setup's error ("" on
+  /// success) and the address the server took ([listen] asks for a free port).
+  static Future<(String, String)> _setupNative(
     String libraryPath,
     String baseDir,
     String workingDir,
@@ -77,18 +78,43 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
     bool debug,
   ) {
     return Isolate.run(() {
-      final errPtr = _open(libraryPath).setup(
-        baseDir.toNativeUtf8().cast(),
-        workingDir.toNativeUtf8().cast(),
-        tempDir.toNativeUtf8().cast(),
-        mode,
-        listen.toNativeUtf8().cast(),
-        secret.toNativeUtf8().cast(),
-        0,
-        debug ? 1 : 0,
-      );
-      return errPtr.cast<Utf8>().toDartString();
+      final box = _open(libraryPath);
+      final arguments = [baseDir, workingDir, tempDir, listen, secret].map((value) => value.toNativeUtf8()).toList();
+      try {
+        final error = takeString(
+          box,
+          box.setup(
+            arguments[0].cast(),
+            arguments[1].cast(),
+            arguments[2].cast(),
+            mode,
+            arguments[3].cast(),
+            arguments[4].cast(),
+            0,
+            debug ? 1 : 0,
+          ),
+        );
+        if (error.isNotEmpty) return (error, '');
+        return ('', takeString(box, box.getListenAddress(mode)));
+      } finally {
+        for (final argument in arguments) {
+          malloc.free(argument);
+        }
+      }
     });
+  }
+
+  /// Reads a string the library returned and frees it: the library allocates every string it returns
+  /// and never frees it itself (W4-02: it used to free the error text before returning it, and the
+  /// reason of a failed setup arrived as "FormatException: Invalid UTF-8 byte").
+  @visibleForTesting
+  static String takeString(HiddifyCoreNativeLibrary box, Pointer<Char> pointer) {
+    if (pointer == nullptr) return '';
+    try {
+      return pointer.cast<Utf8>().toDartString();
+    } finally {
+      box.freeString(pointer);
+    }
   }
 
   Future<bool> isMusl() async {
@@ -100,7 +126,15 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
     }
   }
 
-  final int port;
+  // The loopback port of the core this app talks to (the library's server, or the core's process
+  // on macOS): a free one the core took (W4-01), 0 until it is set up. Upstream used the fixed 17078,
+  // which upstream Hiddify running beside it held, so the core never started.
+  static int _port = 0;
+  int get port => _port;
+
+  /// A loopback address to listen on: a free port.
+  static const _anyFreePort = '127.0.0.1:0';
+
   static String generateRandomPassword(int length) {
     const characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     final random = Random();
@@ -123,7 +157,7 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
   // The core's process (see [CoreProcess]), when this build has its launcher. Without one the core
   // is the library loaded into this process (the FFI path below).
   static CoreProcess? _process;
-  static Future<CoreProcess> Function()? _startProcess;
+  static Future<CoreProcess> Function([String listen])? _startProcess;
   static final List<DateTime> _restarts = [];
   // A core that keeps crashing is not started again more often than this.
   static const _maxRestarts = 3;
@@ -140,15 +174,13 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
   @protected
   bool get libraryForFrontend => false;
 
-  // The proxy engine's process (Windows, Linux), started for a proxy-mode connection only.
+  // The proxy engine's process (Windows, Linux), started for a proxy-mode connection only. It takes a
+  // free port of its own each time (upstream: the library's port + 1, 17079).
   static CoreProcess? _engine;
   static ClientChannel? _engineChannel;
   static CoreClient? _engineClient;
   static Future<CoreProcess> Function()? _startEngineProcess;
   static GrpcClientIdentity? _engineIdentity;
-
-  /// The port the engine's process listens on, beside the library's.
-  int get enginePort => port + 1;
 
   @override
   Future<String> setup(Directories directories, bool debug, int mode) async {
@@ -177,7 +209,7 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
       baseDir: directories.baseDir.path,
       workingDir: directories.workingDir.path,
       tempDir: directories.tempDir.path,
-      listen: '127.0.0.1:$enginePort',
+      listen: _anyFreePort,
       mode: useMtls ? SetupMode.GRPC_NORMAL.value : SetupMode.GRPC_NORMAL_INSECURE.value,
       secret: secret,
       debug: debug,
@@ -199,7 +231,7 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
     final identity = _engineIdentity;
     final channel = ClientChannel(
       '127.0.0.1',
-      port: enginePort,
+      port: process.port,
       options: ChannelOptions(
         credentials: identity == null ? const ChannelCredentials.insecure() : _processCredentials(process, identity),
       ),
@@ -255,12 +287,14 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
       return 'mTLS setup failed: $e';
     }
 
-    _startProcess = () => _startProcessRetrying(
+    // a free port the first time; after a crash the same one again when it is still free, so the
+    // open channel reconnects on its own (see _restartProcess)
+    _startProcess = ([String listen = _anyFreePort]) => _startProcessRetrying(
       executable: executable,
       baseDir: directories.baseDir.path,
       workingDir: directories.workingDir.path,
       tempDir: directories.tempDir.path,
-      listen: '127.0.0.1:$port',
+      listen: listen,
       mode: setupMode,
       secret: secret,
       debug: debug,
@@ -275,6 +309,7 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
       }
       _adoptProcess(process);
     }
+    _port = process.port;
 
     try {
       _credentials = identity == null ? const ChannelCredentials.insecure() : _processCredentials(process, identity);
@@ -285,8 +320,8 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
     return _connect();
   }
 
-  /// Starts the core, waiting a little when its port is still taken: a core that was just asked to
-  /// stop (the previous run of a hot restart) can still hold it.
+  /// Starts the core on [listen]; when that port is taken (by another program since the core last
+  /// had it), on a free one instead.
   static Future<CoreProcess> _startProcessRetrying({
     required String executable,
     required String baseDir,
@@ -297,23 +332,38 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
     required String secret,
     required bool debug,
   }) async {
-    for (var attempt = 1; ; attempt++) {
-      try {
-        return await CoreProcess.start(
-          executable: executable,
-          baseDir: baseDir,
-          workingDir: workingDir,
-          tempDir: tempDir,
-          listen: listen,
-          mode: mode,
-          secret: secret,
-          debug: debug,
-        );
-      } on CoreProcessException catch (e) {
-        if (attempt >= 5 || !e.message.contains('already in use')) rethrow;
-        await Future<void>.delayed(const Duration(seconds: 1));
-      }
+    try {
+      return await CoreProcess.start(
+        executable: executable,
+        baseDir: baseDir,
+        workingDir: workingDir,
+        tempDir: tempDir,
+        listen: listen,
+        mode: mode,
+        secret: secret,
+        debug: debug,
+      );
+    } on CoreProcessException catch (e) {
+      if (listen == _anyFreePort || !isPortTaken(e.message)) rethrow;
+      return CoreProcess.start(
+        executable: executable,
+        baseDir: baseDir,
+        workingDir: workingDir,
+        tempDir: tempDir,
+        listen: _anyFreePort,
+        mode: mode,
+        secret: secret,
+        debug: debug,
+      );
     }
+  }
+
+  /// Whether a listen error says the port is taken: Linux and macOS ("address already in use"),
+  /// Windows ("Only one usage of each socket address ... is normally permitted").
+  @visibleForTesting
+  static bool isPortTaken(String message) {
+    final text = message.toLowerCase();
+    return text.contains('already in use') || text.contains('only one usage of each socket address');
   }
 
   ChannelCredentials _processCredentials(CoreProcess process, GrpcClientIdentity identity) {
@@ -345,8 +395,9 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
     );
   }
 
-  /// Starts the core again after a crash. It listens on the same port with the same certificate (the
-  /// core keeps its key), so the open channel reconnects to it on its own.
+  /// Starts the core again after a crash. It listens on the same port when it is still free, with the
+  /// same certificate (the core keeps its key), so the open channel reconnects to it on its own; on
+  /// another port, the channel is replaced.
   Future<void> _restartProcess(CoreProcess crashed) async {
     final start = _startProcess;
     if (start == null) return;
@@ -359,10 +410,15 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
     _restarts.add(now);
     await Future<void>.delayed(const Duration(seconds: 1));
     try {
-      final process = await start();
+      final process = await start('127.0.0.1:${crashed.port}');
       _adoptProcess(process);
       if (process.serverCertificatePem != crashed.serverCertificatePem) {
         loggy.warning('the restarted core has another certificate; it is reached after the next setup');
+      }
+      if (process.port != _port) {
+        _port = process.port;
+        final error = await _connect();
+        if (error.isNotEmpty) loggy.warning('the restarted core on another port: $error');
       }
       loggy.info('core process restarted');
       onCoreProcessRestarted();
@@ -397,23 +453,29 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
     _logger.debug('hiddify-core loaded (${_box.hashCode})');
     final setupMode = useMtls ? SetupMode.GRPC_NORMAL.value : SetupMode.GRPC_NORMAL_INSECURE.value;
 
-    try {
-      if (!_coreStarted) throw StateError('core is not started yet');
-      // Probe with current credentials once we have a channel path below.
-    } catch (_) {
-      final err = await _setupNative(
-        _path,
-        directories.baseDir.path,
-        directories.workingDir.path,
-        directories.tempDir.path,
-        setupMode,
-        '127.0.0.1:$port',
-        secret,
-        debug,
-      );
-      if (err.isNotEmpty) {
-        return err;
+    if (!_coreStarted) {
+      final String error;
+      final String address;
+      try {
+        (error, address) = await _setupNative(
+          _path,
+          directories.baseDir.path,
+          directories.workingDir.path,
+          directories.tempDir.path,
+          setupMode,
+          _anyFreePort,
+          secret,
+          debug,
+        );
+      } catch (e) {
+        // a library without getListenAddress (older than this app) cannot say where it listens
+        loggy.error('core setup failed', e);
+        return 'The core library does not match this app: $e';
       }
+      if (error.isNotEmpty) return error;
+      final listening = CoreProcess.loopbackPort(address);
+      if (listening == null) return 'The core did not say where it listens ($address).';
+      _port = listening;
       _coreStarted = true;
     }
 
@@ -463,9 +525,7 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
   }
 
   ChannelCredentials _buildMtlsCredentials() {
-    final serverPtr = _box.GetServerPublicKey();
-    final serverPem = serverPtr.cast<Utf8>().toDartString();
-    _box.freeString(serverPtr);
+    final serverPem = takeString(_box, _box.GetServerPublicKey());
     if (serverPem.isEmpty || !serverPem.contains('BEGIN CERTIFICATE')) {
       throw StateError('empty gRPC server certificate');
     }
@@ -479,9 +539,7 @@ class CoreInterfaceDesktop extends CoreInterface with InfraLogger {
 
     final clientPtr = mtls.clientCertificatePem.toNativeUtf8();
     try {
-      final errPtr = _box.AddGrpcClientPublicKey(clientPtr.cast());
-      final err = errPtr.cast<Utf8>().toDartString();
-      _box.freeString(errPtr);
+      final err = takeString(_box, _box.AddGrpcClientPublicKey(clientPtr.cast()));
       if (err.isNotEmpty) {
         throw StateError('AddGrpcClientPublicKey: $err');
       }

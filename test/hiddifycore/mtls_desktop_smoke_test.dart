@@ -35,13 +35,15 @@ void main() {
       await tmp.delete(recursive: true);
     });
 
-    final core = CoreInterfaceDesktop(port: 17178);
+    final core = CoreInterfaceDesktop();
     final err = await core.setup(
       (baseDir: tmp, workingDir: tmp, tempDir: tmp),
       true,
       SetupMode.GRPC_NORMAL.value,
     );
     expect(err, isEmpty, reason: 'setup should succeed with mTLS: $err');
+    // W4-01: a free port the core took, never upstream's fixed one
+    expect(core.port, isNot(anyOf(0, 17078, 17079)));
 
     final info = await core.fgClient.getSystemInfo(Empty());
     expect(info, isNotNull);

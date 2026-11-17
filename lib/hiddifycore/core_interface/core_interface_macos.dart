@@ -21,15 +21,15 @@ import 'package:meta/meta.dart';
 import 'package:rxdart/rxdart.dart';
 
 class CoreInterfaceMacOS extends CoreInterfaceDesktop {
-  // Keep the app's parser/proxy service separate from iOS-on-Mac's 17078/17079.
-  CoreInterfaceMacOS() : super(port: 17080);
+  // The app's core process takes a free port (W4-01), apart from iOS-on-Mac's and upstream Hiddify's.
+  CoreInterfaceMacOS() : super();
 
   @visibleForTesting
   CoreInterfaceMacOS.withForegroundClient(
     CoreClient client,
     Map<String, dynamic> nativeState, {
     Directory? workingDirectory,
-  }) : super(port: 17080) {
+  }) : super() {
     fgClient = bgClient = client;
     _workingDirectory = workingDirectory?.absolute;
     _receiveState(nativeState);

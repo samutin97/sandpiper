@@ -138,3 +138,48 @@ class MTLSChannelCredentials extends ChannelCredentials {
   @override
   bool get isSecure => true;
 }
+
+/// TLS to a local server whose certificate the app was handed beforehand (the VPN service's
+/// endpoint file, the AppImage service's output): that certificate only is accepted, and the app
+/// presents none, as it proves itself to the server with the control secret.
+class PinnedTlsChannelCredentials extends ChannelCredentials {
+  PinnedTlsChannelCredentials._({
+    required SecurityContext context,
+    required Uint8List serverCertificateDer,
+    required String serverPemBody,
+  }) : _ctx = context,
+       super.secure(
+         authority: '127.0.0.1',
+         onBadCertificate: (X509Certificate cert, String host) {
+           if (!MTLSChannelCredentials._isLoopbackHost(host)) return false;
+           if (MTLSChannelCredentials._bytesEqual(cert.der, serverCertificateDer)) return true;
+           final presented = MTLSChannelCredentials._pemBody(cert.pem);
+           return presented.isNotEmpty && presented == serverPemBody;
+         },
+       );
+
+  final SecurityContext _ctx;
+
+  factory PinnedTlsChannelCredentials.fromPem(String serverCertificatePem) {
+    if (!serverCertificatePem.contains('-----BEGIN CERTIFICATE-----')) {
+      throw ArgumentError('Server certificate must be PEM.');
+    }
+    final ctx = SecurityContext();
+    ctx.setAlpnProtocols(supportedAlpnProtocols, false);
+    ctx.setTrustedCertificatesBytes(utf8.encode(serverCertificatePem));
+    return PinnedTlsChannelCredentials._(
+      context: ctx,
+      serverCertificateDer: MTLSChannelCredentials._pemToDer(serverCertificatePem),
+      serverPemBody: MTLSChannelCredentials._pemBody(serverCertificatePem),
+    );
+  }
+
+  @override
+  SecurityContext get securityContext => _ctx;
+
+  @override
+  String? get authority => '127.0.0.1';
+
+  @override
+  bool get isSecure => true;
+}

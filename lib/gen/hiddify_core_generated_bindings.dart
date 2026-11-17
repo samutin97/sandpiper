@@ -1816,6 +1816,15 @@ class HiddifyCoreNativeLibrary {
   late final _closeGrpcPtr = _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Int)>>('closeGrpc');
   late final _closeGrpc = _closeGrpcPtr.asFunction<void Function(int)>();
 
+  ffi.Pointer<ffi.Char> getListenAddress(int mode) {
+    return _getListenAddress(mode);
+  }
+
+  late final _getListenAddressPtr = _lookup<ffi.NativeFunction<ffi.Pointer<ffi.Char> Function(ffi.Int)>>(
+    'getListenAddress',
+  );
+  late final _getListenAddress = _getListenAddressPtr.asFunction<ffi.Pointer<ffi.Char> Function(int)>();
+
   ffi.Pointer<ffi.Char> StartCoreGrpcServer(ffi.Pointer<ffi.Char> listenAddress) {
     return _StartCoreGrpcServer(listenAddress);
   }

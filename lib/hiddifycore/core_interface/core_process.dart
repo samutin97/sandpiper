@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:hiddify/hiddifycore/core_interface/service_names.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hiddify/utils/custom_loggers.dart';
 import 'package:path/path.dart' as p;
@@ -26,14 +27,18 @@ class CoreProcessException implements Exception {
 ///   macOS, so App Nap does not throttle it while the UI is in the background (hiddify-app#2343)
 /// - Linux: `HiddifyCli`, which renames itself `hiddify-core` for htop and top
 ///
-/// The core raises its own priority. It stops, restoring the system proxy, when its stdin closes:
+/// It listens on the port it is given, or on a free one for port 0 (the app's choice, W4-01: upstream's
+/// fixed 17078/17079 were taken whenever upstream Hiddify ran beside it), and says which before it is
+/// ready. The core raises its own priority. It stops, restoring the system proxy, when its stdin closes:
 /// this process holds the other end and never writes to it, so it closes when the UI exits, even
 /// when the UI crashes or is killed. The core also watches the UI's process id.
 class CoreProcess {
-  CoreProcess._(this._process, this.serverCertificatePem, this._crashFile, this._stderrTail);
+  CoreProcess._(this._process, this.serverCertificatePem, this.port, this._crashFile, this._stderrTail);
 
   static const _readyPrefix = 'HIDDIFY_CORE_READY ';
   static const _errorPrefix = 'HIDDIFY_CORE_ERROR ';
+  // the address the gRPC server took, written before the ready line (hiddify-core cmd/cmd_core.go)
+  static const _listenPrefix = 'HIDDIFY_CORE_LISTEN ';
   static const _secretEnv = 'HIDDIFY_CORE_SECRET';
   // The setup loads the core's data and can take a while on a slow disk.
   static const _readyTimeout = Duration(seconds: 60);
@@ -52,6 +57,12 @@ class CoreProcess {
   /// The gRPC server certificate (PEM), empty without TLS.
   final String serverCertificatePem;
 
+  /// The loopback port the core's gRPC server listens on.
+  final int port;
+
+  /// The port of a loopback address ("127.0.0.1:41234", "[::1]:41234"), or null for any other.
+  static int? loopbackPort(String address) => ServiceEndpoint.parseAddress(address)?.port;
+
   bool _stopping = false;
 
   int get processId => _process.pid;
@@ -68,11 +79,11 @@ class CoreProcess {
     final directory = p.dirname(Platform.resolvedExecutable);
     final String path;
     if (Platform.isWindows) {
-      path = p.join(directory, 'SandpiperCoreEngine.exe');
+      path = p.join(directory, ServiceNames.windowsEngine);
     } else if (Platform.isMacOS) {
       path = p.normalize(p.join(directory, '..', 'Helpers', 'Hiddify Core.app', 'Contents', 'MacOS', 'Hiddify'));
     } else if (Platform.isLinux) {
-      path = p.join(directory, 'HiddifyCli');
+      path = p.join(directory, ServiceNames.linuxCli);
     } else {
       return null;
     }
@@ -120,9 +131,12 @@ class CoreProcess {
     final crashFile = File(p.join(workingDir, 'data', 'stderr${SetupMode.valueOf(mode)?.name ?? mode}.log'));
     final stderrTail = <String>[];
     final ready = Completer<String>();
+    String? listening;
     // Both pipes are read to the end: a full pipe would block the core.
     process.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((line) {
-      if (!ready.isCompleted && line.startsWith(_readyPrefix)) {
+      if (!ready.isCompleted && line.startsWith(_listenPrefix)) {
+        listening = line.substring(_listenPrefix.length).trim();
+      } else if (!ready.isCompleted && line.startsWith(_readyPrefix)) {
         ready.complete(line.substring(_readyPrefix.length).trim());
       } else if (!ready.isCompleted && line.startsWith(_errorPrefix)) {
         ready.completeError(CoreProcessException(line.substring(_errorPrefix.length)));
@@ -159,9 +173,13 @@ class CoreProcess {
 
     try {
       final certificate = await ready.future.timeout(_readyTimeout);
+      // an older core says nothing: it listens where it was told
+      final port = loopbackPort(listening ?? listen) ?? 0;
+      if (port == 0) throw CoreProcessException('the core did not say where it listens (${listening ?? listen})');
       return CoreProcess._(
         process,
         certificate.isEmpty ? '' : utf8.decode(base64.decode(certificate)),
+        port,
         crashFile,
         stderrTail,
       );
