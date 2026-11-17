@@ -19,6 +19,7 @@ import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
 import 'package:hiddify/features/proxy/active/active_proxy_notifier.dart';
 import 'package:hiddify/features/proxy/active/ip_widget.dart';
 import 'package:hiddify/features/proxy/model/proxy_entity.dart';
+import 'package:hiddify/features/proxy/tiers/tier_status.dart';
 import 'package:hiddify/features/proxy/widget/proxy_type_label.dart';
 import 'package:hiddify/features/proxy/widget/upload_speed.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
@@ -362,13 +363,17 @@ class _ProxyRow extends ConsumerWidget {
                     switch (group) {
                       lowestGroupTag => Icons.bolt_rounded,
                       balanceGroupTag => Icons.call_split_rounded,
+                      tieredGroupTag => Icons.leaderboard_outlined,
                       _ => Icons.layers_outlined,
                     },
                     size: 13,
                     color: s.primary,
                   ),
                   const Gap(2),
-                  Text(group, style: theme.textTheme.labelMedium?.copyWith(color: s.primary, letterSpacing: .3)),
+                  Text(
+                    group == tieredGroupTag ? t.fork.tiers.groupName : group,
+                    style: theme.textTheme.labelMedium?.copyWith(color: s.primary, letterSpacing: .3),
+                  ),
                   Text('  ·  ', style: theme.textTheme.labelMedium?.copyWith(color: s.outline)),
                   Flexible(
                     child: group == balanceGroupTag

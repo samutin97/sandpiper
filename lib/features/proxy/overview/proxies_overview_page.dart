@@ -8,9 +8,12 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/widget/adaptive_icon.dart';
 import 'package:hiddify/features/connection/notifier/connection_notifier.dart';
+import 'package:hiddify/features/profile/model/profile_policy.dart';
 import 'package:hiddify/features/proxy/keep_top/keep_top_widgets.dart';
 import 'package:hiddify/features/proxy/model/proxy_entity.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
+import 'package:hiddify/features/proxy/tiers/tier_status.dart';
+import 'package:hiddify/features/proxy/tiers/tier_widgets.dart';
 import 'package:hiddify/features/proxy/widget/proxy_tile.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hiddify/utils/utils.dart';
@@ -27,6 +30,8 @@ class ProxiesOverviewPage extends HookConsumerWidget with PresLogger {
     final sortBy = ref.watch(proxiesSortNotifierProvider);
     // the proxies keep top left at rest, under the list: shown at first, then folded or not as the user left them
     final showResting = ref.watch(Preferences.showSleepingProxies);
+    // the server's rating of the active profile's proxies, if it gave one
+    final policy = ref.watch(activePolicyProvider);
 
     // final selectActiveProxyMutation = useMutation(
     //   initialOnFailure: (error) => CustomToast.error(t.presentShortError(error)).show(context),
@@ -108,12 +113,19 @@ class ProxiesOverviewPage extends HookConsumerWidget with PresLogger {
                   // the proxies in use, then, folded, the ones keep top left at rest
                   final inUse = group.items.where((e) => !e.resting).toList();
                   final resting = group.items.where((e) => e.resting).toList();
-                  final listed = inUse.where((e) => e.tag != lowestGroupTag && e.tag != balanceGroupTag).length;
+                  final listed = inUse
+                      .where((e) => e.tag != lowestGroupTag && e.tag != balanceGroupTag && e.tag != tieredGroupTag)
+                      .length;
+                  // the server's rating: where it puts each proxy; nothing without a policy
+                  final places =
+                      policy?.bind(group.items.where((e) => !e.isGroup).map((e) => e.tag)) ??
+                      const <String, PolicyPlace>{};
                   Widget grid(List<OutboundInfo> items) => SliverGrid.builder(
                     itemCount: items.length,
                     gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: crossAxisCount,
-                      mainAxisExtent: 72,
+                      // a row with the server's scores has a line more
+                      mainAxisExtent: items.any((e) => places.containsKey(e.tag)) ? 90 : 72,
                     ),
                     itemBuilder: (context, index) {
                       final proxy = items[index];
@@ -121,6 +133,7 @@ class ProxiesOverviewPage extends HookConsumerWidget with PresLogger {
                         proxy,
                         // a row keeps its own proxy when the list re-sorts, so a pop plays only on arrival
                         key: ValueKey(proxy.tag),
+                        place: places[proxy.tag],
                         selected: group.selected == proxy.tag,
                         // a pick goes through hundreds of proxies, a row or two change every second:
                         // their values change in place, nothing pops or loops
@@ -136,16 +149,32 @@ class ProxiesOverviewPage extends HookConsumerWidget with PresLogger {
                   final keepTop = SliverToBoxAdapter(
                     child: KeepTopFooter(listed: listed, picking: group.keepTopPicking, proxies: group.items),
                   );
+                  // with a policy: the groups, then "recommended", the reserves, the last resort and the
+                  // others under their titles; without one, one grid as before
+                  final inUseSlivers = places.isEmpty
+                      ? [grid(inUse)]
+                      : [
+                          for (final section in tierSections(inUse, places)) ...[
+                            if (section.mode case final mode?) SliverToBoxAdapter(child: TierSectionHeader(mode)),
+                            grid(section.items),
+                          ],
+                        ];
                   return CustomScrollView(
                     slivers: [
+                      SliverToBoxAdapter(
+                        child: TierSwitch(
+                          group: group,
+                          onSelect: (tag) => ref.read(proxiesOverviewNotifierProvider.notifier).changeProxy(group.tag, tag),
+                        ),
+                      ),
                       // under the proxies that run; over the ones still being tested, none of which
                       // is kept yet
                       if (group.keepTopPicking) ...[
                         keepTop,
                         const SliverPadding(padding: EdgeInsets.only(top: 12)),
-                        grid(inUse),
+                        ...inUseSlivers,
                       ] else ...[
-                        grid(inUse),
+                        ...inUseSlivers,
                         keepTop,
                       ],
                       if (resting.isNotEmpty) ...[

@@ -9,11 +9,14 @@ import 'package:hiddify/core/model/constants.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/widget/ambient_motion.dart';
 import 'package:hiddify/core/widget/unique_keys_layout.dart';
+import 'package:hiddify/features/profile/model/profile_policy.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
 import 'package:hiddify/features/proxy/active/ip_widget.dart';
 import 'package:hiddify/features/proxy/keep_top/keep_top.dart';
 import 'package:hiddify/features/proxy/model/proxy_entity.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
+import 'package:hiddify/features/proxy/tiers/tier_status.dart';
+import 'package:hiddify/features/proxy/tiers/tier_widgets.dart';
 import 'package:hiddify/features/proxy/widget/proxy_type_label.dart';
 import 'package:hiddify/features/proxy/widget/upload_speed.dart';
 import 'package:hiddify/gen/assets.gen.dart';
@@ -33,9 +36,14 @@ class ProxyTile extends HookConsumerWidget with PresLogger {
     this.showPing = true,
     this.testing = false,
     this.quiet = false,
+    this.place,
   });
 
   final OutboundInfo proxy;
+
+  /// Where the server's rating puts the proxy (its scores, a reserve): a line under its type; null
+  /// without a policy, or for a proxy the policy does not name.
+  final PolicyPlace? place;
   final bool selected;
   final GestureTapCallback? onTap;
 
@@ -101,9 +109,24 @@ class ProxyTile extends HookConsumerWidget with PresLogger {
           : _ping(context, state, style, colors, t, arrived: arrived),
     );
 
+    final typeLine = Row(
+      children: [
+        Flexible(
+          child: ProxyTypeLabel(
+            proxy.typeWithoutStatus,
+            suffix: [
+              if (proxy.isGroup)
+                TextSpan(text: ' (${proxy.groupSelectedTagDisplay.trim()})', style: theme.textTheme.bodySmall),
+            ],
+            style: faded ? TextStyle(color: theme.colorScheme.onSurfaceVariant.withValues(alpha: _fadedAlpha)) : null,
+          ),
+        ),
+        if (word != null) Text('  ·  $word', maxLines: 1, style: TextStyle(color: colors.accent)),
+      ],
+    );
     final tile = ListTile(
       title: Text(
-        proxy.nameWithDetour,
+        proxy.tag == tieredGroupTag ? t.fork.tiers.groupName : proxy.nameWithDetour,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           fontFamily: PlatformUtils.isWindows ? FontFamily.emoji : null,
@@ -133,22 +156,15 @@ class ProxyTile extends HookConsumerWidget with PresLogger {
           ],
         ),
       ),
-      // the state word stays whole; a long type gives way first
-      subtitle: Row(
-        children: [
-          Flexible(
-            child: ProxyTypeLabel(
-              proxy.typeWithoutStatus,
-              suffix: [
-                if (proxy.isGroup)
-                  TextSpan(text: ' (${proxy.groupSelectedTagDisplay.trim()})', style: theme.textTheme.bodySmall),
-              ],
-              style: faded ? TextStyle(color: theme.colorScheme.onSurfaceVariant.withValues(alpha: _fadedAlpha)) : null,
-            ),
-          ),
-          if (word != null) Text('  ·  $word', maxLines: 1, style: TextStyle(color: colors.accent)),
-        ],
-      ),
+      // the state word stays whole; a long type gives way first. Under it, the server's rating
+      subtitle: switch (place) {
+        final place? => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [typeLine, const Gap(3), TierRatingsLine(place)],
+        ),
+        null => typeLine,
+      },
       trailing: SizedBox(
         width: 88,
         child: Column(

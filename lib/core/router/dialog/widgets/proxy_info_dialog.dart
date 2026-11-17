@@ -16,6 +16,7 @@ import 'package:hiddify/features/proxy/data/single_proxy_config.dart';
 import 'package:hiddify/features/proxy/keep_top/keep_top.dart';
 import 'package:hiddify/features/proxy/model/proxy_entity.dart';
 import 'package:hiddify/features/proxy/overview/proxies_overview_notifier.dart';
+import 'package:hiddify/features/proxy/tiers/tier_widgets.dart';
 import 'package:hiddify/features/proxy/widget/upload_speed.dart';
 import 'package:hiddify/hiddifycore/generated/v2/hcore/hcore.pb.dart';
 import 'package:hiddify/utils/custom_loggers.dart';
@@ -96,6 +97,16 @@ class ProxyInfoDialog extends ConsumerWidget with PresLogger {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               OutboundInfoWidget(outboundInfo: proxy),
+              // the server's rating of the proxy, larger, with what it means (nothing without one)
+              if (!proxy.isGroup)
+                TierDetailsOf(
+                  proxy.tag,
+                  tags: ref.watch(
+                    proxiesOverviewNotifierProvider.select(
+                      (list) => list.valueOrNull?.items.where((e) => !e.isGroup).map((e) => e.tag).toList(),
+                    ),
+                  ),
+                ),
               if (_canShare(proxy)) _KeepLoaded(proxy),
             ],
           ),

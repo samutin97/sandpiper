@@ -390,6 +390,7 @@ const OutboundGroup$json = {
     {'1': 'Is_expand', '3': 5, '4': 1, '5': 8, '10': 'IsExpand'},
     {'1': 'items', '3': 6, '4': 3, '5': 11, '6': '.hcore.OutboundInfo', '10': 'items'},
     {'1': 'keep_top_picking', '3': 7, '4': 1, '5': 8, '10': 'keepTopPicking'},
+    {'1': 'tier_state', '3': 8, '4': 1, '5': 9, '10': 'tierState'},
   ],
 };
 
@@ -399,7 +400,7 @@ final $typed_data.Uint8List outboundGroupDescriptor = $convert.base64Decode(
     'oIc2VsZWN0ZWQYAyABKAlSCHNlbGVjdGVkEh4KCnNlbGVjdGFibGUYBCABKAhSCnNlbGVjdGFi'
     'bGUSGwoJSXNfZXhwYW5kGAUgASgIUghJc0V4cGFuZBIpCgVpdGVtcxgGIAMoCzITLmhjb3JlLk'
     '91dGJvdW5kSW5mb1IFaXRlbXMSKAoQa2VlcF90b3BfcGlja2luZxgHIAEoCFIOa2VlcFRvcFBp'
-    'Y2tpbmc=');
+    'Y2tpbmcSHQoKdGllcl9zdGF0ZRgIIAEoCVIJdGllclN0YXRl');
 
 @$core.Deprecated('Use outboundGroupListDescriptor instead')
 const OutboundGroupList$json = {

@@ -1238,6 +1238,7 @@ class OutboundGroup extends $pb.GeneratedMessage {
     $core.bool? isExpand,
     $core.Iterable<OutboundInfo>? items,
     $core.bool? keepTopPicking,
+    $core.String? tierState,
   }) {
     final $result = create();
     if (tag != null) {
@@ -1261,6 +1262,9 @@ class OutboundGroup extends $pb.GeneratedMessage {
     if (keepTopPicking != null) {
       $result.keepTopPicking = keepTopPicking;
     }
+    if (tierState != null) {
+      $result.tierState = tierState;
+    }
     return $result;
   }
   OutboundGroup._() : super();
@@ -1275,6 +1279,7 @@ class OutboundGroup extends $pb.GeneratedMessage {
     ..aOB(5, _omitFieldNames ? '' : 'IsExpand', protoName: 'Is_expand')
     ..pc<OutboundInfo>(6, _omitFieldNames ? '' : 'items', $pb.PbFieldType.PM, subBuilder: OutboundInfo.create)
     ..aOB(7, _omitFieldNames ? '' : 'keepTopPicking')
+    ..aOS(8, _omitFieldNames ? '' : 'tierState')
     ..hasRequiredFields = false
   ;
 
@@ -1355,6 +1360,16 @@ class OutboundGroup extends $pb.GeneratedMessage {
   $core.bool hasKeepTopPicking() => $_has(6);
   @$pb.TagNumber(7)
   void clearKeepTopPicking() => clearField(7);
+
+  /// the tiered group only (tag "tiered"): the state of the choice by the server's policy, as JSON
+  @$pb.TagNumber(8)
+  $core.String get tierState => $_getSZ(7);
+  @$pb.TagNumber(8)
+  set tierState($core.String v) { $_setString(7, v); }
+  @$pb.TagNumber(8)
+  $core.bool hasTierState() => $_has(7);
+  @$pb.TagNumber(8)
+  void clearTierState() => clearField(8);
 }
 
 class OutboundGroupList extends $pb.GeneratedMessage {

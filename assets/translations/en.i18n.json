@@ -1471,6 +1471,60 @@
     },
     "core": {
       "notRunning": "The core is not running: ${reason}"
+    },
+    "tiers": {
+      "groupName": "By server rating",
+      "switchTitle": "Choose by the server's rating",
+      "switchSubtitle": "The app uses the most reliable and best hidden option that works in this network, and moves to a reserve only when it has to",
+      "recommended": "Recommended",
+      "reserve": "Reserve options",
+      "lastResort": "Last resort: use only if nothing else works",
+      "other": "Other options",
+      "reserveBadge": "reserve",
+      "lastResortBadge": "last resort",
+      "reliability": "Reliability",
+      "stealth": "Stealth",
+      "security": "Security",
+      "reliabilityShort": "Rel.",
+      "stealthShort": "Stealth",
+      "securityShort": "Sec.",
+      "ratingsTitle": "Server's rating",
+      "outOf": "${n} of 5",
+      "scaleHint": "From 1 to 5, set by your server and updated with the subscription. Reliability: how steadily it works. Stealth: how much it looks like ordinary traffic. Security: how well it protects the connection.",
+      "place": {
+        "recommended": "Recommended by the server",
+        "reserve": "Reserve: used when the recommended options do not work",
+        "lastResort": "Last resort: used only when nothing else works",
+        "manual": "Chosen by hand only"
+      },
+      "captions": {
+        "main": "Main option",
+        "compact": "Short handshake, for networks that cut long ones",
+        "altTls": "Another TLS stack, in case the usual ones are recognized",
+        "borrowedSni": "Poses as another site",
+        "udp": "Over UDP: works when TCP connections freeze",
+        "ipRisk": "May draw attention to the server's address: use it briefly",
+        "lowVolume": "Avoid large downloads",
+        "slow": "Slower than the others",
+        "mobile": "For mobile networks",
+        "wired": "For home internet"
+      },
+      "banner": {
+        "reserveTitle": "Reserve option in use: ${name}",
+        "lastResortTitle": "Last resort in use: ${name}",
+        "nodeFailed": "The main options do not get through in this network.",
+        "tcpBlocked": "TCP connections to the server freeze in this network, so an option over UDP is used.",
+        "slow": "The main options are slow in this network.",
+        "backUp": "The app goes back to the main options by itself once they work again.",
+        "lastResortHint": "Use it briefly and avoid large downloads.",
+        "none": "No option of the server's rating works in this network now. The app will try again.",
+        "confirmTitle": "Use the last resort?",
+        "confirmBody": "The main and reserve options do not work in this network. The last resort, ${name}, may draw attention to the server's address: use it briefly.",
+        "use": "Use",
+        "notNow": "Not now",
+        "toast": "Switched to the last resort: ${name}",
+        "confirmFailed": "The app is no longer waiting for this option"
+      }
     }
   }
 }
