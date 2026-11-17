@@ -1376,6 +1376,7 @@
       "notActivated": "The profile is added but not selected: the current connection does not change. Import only what you trust.",
       "firstActivated": "It is your first profile, so it is selected. Import only what you trust.",
       "direct": "The VPN is not connected: the subscription is downloaded directly, and your provider sees the request to ${host}.",
+      "tunneled": "The subscription is downloaded through the VPN.",
       "insecureHttp": "Subscriptions over http:// are not accepted: your provider would see the link with its access key. Ask for an https:// link.",
       "added": "Profile added. To use it, select it in the list of profiles.",
       "type": "Type: ${type}",

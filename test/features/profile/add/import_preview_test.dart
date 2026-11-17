@@ -180,6 +180,8 @@ void main() {
       expect(message, contains('Home'));
       expect(message, contains(t.fork.import.notActivated));
       expect(message, isNot(contains(t.fork.import.direct(host: 'panel.example.com'))));
+      // SP3-05: and that the download goes through the tunnel
+      expect(message, contains(t.fork.import.tunneled));
     });
 
     test('warns that the download goes around the tunnel', () {
@@ -192,6 +194,7 @@ void main() {
       );
       expect(message, contains(t.fork.import.firstActivated));
       expect(message, contains(t.fork.import.direct(host: 'panel.example.com')));
+      expect(message, isNot(contains(t.fork.import.tunneled)));
     });
 
     test('lists a few servers of a config and counts the rest', () {

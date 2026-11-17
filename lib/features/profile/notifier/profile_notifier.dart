@@ -150,7 +150,8 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
         ),
       '',
       if (activate) t.fork.import.firstActivated else t.fork.import.notActivated,
-      if (preview.remote && !tunneled) t.fork.import.direct(host: preview.host ?? ''),
+      // SP3-05: how the subscription is downloaded, either way
+      if (preview.remote) tunneled ? t.fork.import.tunneled : t.fork.import.direct(host: preview.host ?? ''),
     ];
     return lines.join('\n');
   }
