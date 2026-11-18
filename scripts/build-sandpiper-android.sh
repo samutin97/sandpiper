@@ -32,10 +32,10 @@ SRC="${SRC:-$VPN/src/hiddify-app}"
 WORK="${WORK:-$VPN/build/hiddify-hardened}"
 CORE="${CORE:-hardened}"
 CORE_AAR="${CORE_AAR:-$VPN/build/artifacts/hiddify-core-hardened/hiddify-core.aar}"
-# the hardened core this version of the app is made for (6c047fc, 5.9.8-sp.10: as in sp.9, and the
-# handshake gate's window keeps the ClientHellos to 4 in 5 s); a newer aar is taken only with its
-# own CORE_SHA256
-CORE_PINNED_SHA256="e2a8ff4dbd33713b46e34e2d01e7f5811b7941f3d3b61f2ac6de14de97d49d44"
+# the hardened core this version of the app is made for (b27c1db, 5.9.8-sp.11: as in sp.10, and TCP
+# out to one server of the subscription leaves the other servers' proxies in the choice); a newer
+# aar is taken only with its own CORE_SHA256
+CORE_PINNED_SHA256="3af435512a529321ae227a37a8bec9b54181b16a0edc55c9436863652548918a"
 KEYSTORE="${KEYSTORE:-$VPN/secrets/android-signing/sandpiper-release.jks}"
 KEYPASS_FILE="${KEYPASS_FILE:-$VPN/secrets/android-signing/sandpiper-release.password.txt}"
 KEYALIAS="${KEYALIAS:-sandpiper}"
