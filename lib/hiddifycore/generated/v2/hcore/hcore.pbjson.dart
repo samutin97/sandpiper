@@ -758,6 +758,53 @@ final $typed_data.Uint8List exportDiagnosticsResponseDescriptor = $convert.base6
     'ChlFeHBvcnREaWFnbm9zdGljc1Jlc3BvbnNlEhIKBHBhdGgYASABKAlSBHBhdGgSGAoHY29udG'
     'VudBgCIAEoDFIHY29udGVudBIcCgllbmNyeXB0ZWQYAyABKAhSCWVuY3J5cHRlZA==');
 
+@$core.Deprecated('Use blockJournalRequestDescriptor instead')
+const BlockJournalRequest$json = {
+  '1': 'BlockJournalRequest',
+  '2': [
+    {'1': 'clear', '3': 1, '4': 1, '5': 8, '10': 'clear'},
+    {'1': 'export', '3': 2, '4': 1, '5': 8, '10': 'export'},
+    {'1': 'extra_files', '3': 3, '4': 3, '5': 11, '6': '.hcore.BlockJournalRequest.ExtraFilesEntry', '10': 'extraFiles'},
+    {'1': 'inline', '3': 4, '4': 1, '5': 8, '10': 'inline'},
+    {'1': 'destination_path', '3': 5, '4': 1, '5': 9, '10': 'destinationPath'},
+  ],
+  '3': [BlockJournalRequest_ExtraFilesEntry$json],
+};
+
+@$core.Deprecated('Use blockJournalRequestDescriptor instead')
+const BlockJournalRequest_ExtraFilesEntry$json = {
+  '1': 'ExtraFilesEntry',
+  '2': [
+    {'1': 'key', '3': 1, '4': 1, '5': 9, '10': 'key'},
+    {'1': 'value', '3': 2, '4': 1, '5': 12, '10': 'value'},
+  ],
+  '7': {'7': true},
+};
+
+/// Descriptor for `BlockJournalRequest`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List blockJournalRequestDescriptor = $convert.base64Decode(
+    'ChNCbG9ja0pvdXJuYWxSZXF1ZXN0EhQKBWNsZWFyGAEgASgIUgVjbGVhchIWCgZleHBvcnQYAiAB'
+    'KAhSBmV4cG9ydBJLCgtleHRyYV9maWxlcxgDIAMoCzIqLmhjb3JlLkJsb2NrSm91cm5hbFJlcXVl'
+    'c3QuRXh0cmFGaWxlc0VudHJ5UgpleHRyYUZpbGVzEhYKBmlubGluZRgEIAEoCFIGaW5saW5lEikK'
+    'EGRlc3RpbmF0aW9uX3BhdGgYBSABKAlSD2Rlc3RpbmF0aW9uUGF0aBo9Cg9FeHRyYUZpbGVzRW50'
+    'cnkSEAoDa2V5GAEgASgJUgNrZXkSFAoFdmFsdWUYAiABKAxSBXZhbHVlOgI4AQ==');
+
+@$core.Deprecated('Use blockJournalResponseDescriptor instead')
+const BlockJournalResponse$json = {
+  '1': 'BlockJournalResponse',
+  '2': [
+    {'1': 'path', '3': 1, '4': 1, '5': 9, '10': 'path'},
+    {'1': 'content', '3': 2, '4': 1, '5': 12, '10': 'content'},
+    {'1': 'size', '3': 3, '4': 1, '5': 3, '10': 'size'},
+    {'1': 'enabled', '3': 4, '4': 1, '5': 8, '10': 'enabled'},
+  ],
+};
+
+/// Descriptor for `BlockJournalResponse`. Decode as a `google.protobuf.DescriptorProto`.
+final $typed_data.Uint8List blockJournalResponseDescriptor = $convert.base64Decode(
+    'ChRCbG9ja0pvdXJuYWxSZXNwb25zZRISCgRwYXRoGAEgASgJUgRwYXRoEhgKB2NvbnRlbnQYAiAB'
+    'KAxSB2NvbnRlbnQSEgoEc2l6ZRgDIAEoA1IEc2l6ZRIYCgdlbmFibGVkGAQgASgIUgdlbmFibGVk');
+
 @$core.Deprecated('Use lANIPResponseDescriptor instead')
 const LANIPResponse$json = {
   '1': 'LANIPResponse',

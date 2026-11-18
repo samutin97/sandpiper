@@ -2930,6 +2930,202 @@ class ExportDiagnosticsResponse extends $pb.GeneratedMessage {
   void clearEncrypted() => clearField(3);
 }
 
+/// The journal of what stopped getting through (data/diag of the core's working directory, a ring of
+/// JSON lines, about 5 MB): the checks of the proxies, the choices of the tiered group, the network,
+/// the connections through the proxies and the handshakes to each server. Never the sites the user
+/// visits, DNS questions, user IDs, links or passwords. Hardened fork.
+class BlockJournalRequest extends $pb.GeneratedMessage {
+  factory BlockJournalRequest({
+    $core.bool? clear_1,
+    $core.bool? export,
+    $core.Map<$core.String, $core.List<$core.int>>? extraFiles,
+    $core.bool? inline,
+    $core.String? destinationPath,
+  }) {
+    final $result = create();
+    if (clear_1 != null) {
+      $result.clear_1 = clear_1;
+    }
+    if (export != null) {
+      $result.export = export;
+    }
+    if (extraFiles != null) {
+      $result.extraFiles.addAll(extraFiles);
+    }
+    if (inline != null) {
+      $result.inline = inline;
+    }
+    if (destinationPath != null) {
+      $result.destinationPath = destinationPath;
+    }
+    return $result;
+  }
+  BlockJournalRequest._() : super();
+  factory BlockJournalRequest.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory BlockJournalRequest.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'BlockJournalRequest', package: const $pb.PackageName(_omitMessageNames ? '' : 'hcore'), createEmptyInstance: create)
+    ..aOB(1, _omitFieldNames ? '' : 'clear')
+    ..aOB(2, _omitFieldNames ? '' : 'export')
+    ..m<$core.String, $core.List<$core.int>>(3, _omitFieldNames ? '' : 'extraFiles', entryClassName: 'BlockJournalRequest.ExtraFilesEntry', keyFieldType: $pb.PbFieldType.OS, valueFieldType: $pb.PbFieldType.OY, packageName: const $pb.PackageName('hcore'))
+    ..aOB(4, _omitFieldNames ? '' : 'inline')
+    ..aOS(5, _omitFieldNames ? '' : 'destinationPath')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  BlockJournalRequest clone() => BlockJournalRequest()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  BlockJournalRequest copyWith(void Function(BlockJournalRequest) updates) => super.copyWith((message) => updates(message as BlockJournalRequest)) as BlockJournalRequest;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static BlockJournalRequest create() => BlockJournalRequest._();
+  BlockJournalRequest createEmptyInstance() => create();
+  static $pb.PbList<BlockJournalRequest> createRepeated() => $pb.PbList<BlockJournalRequest>();
+  @$core.pragma('dart2js:noInline')
+  static BlockJournalRequest getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<BlockJournalRequest>(create);
+  static BlockJournalRequest? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.bool get clear_1 => $_getBF(0);
+  @$pb.TagNumber(1)
+  set clear_1($core.bool v) { $_setBool(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasClear_1() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearClear_1() => clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.bool get export => $_getBF(1);
+  @$pb.TagNumber(2)
+  set export($core.bool v) { $_setBool(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasExport() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearExport() => clearField(2);
+
+  @$pb.TagNumber(3)
+  $core.Map<$core.String, $core.List<$core.int>> get extraFiles => $_getMap(2);
+
+  @$pb.TagNumber(4)
+  $core.bool get inline => $_getBF(3);
+  @$pb.TagNumber(4)
+  set inline($core.bool v) { $_setBool(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasInline() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearInline() => clearField(4);
+
+  @$pb.TagNumber(5)
+  $core.String get destinationPath => $_getSZ(4);
+  @$pb.TagNumber(5)
+  set destinationPath($core.String v) { $_setString(4, v); }
+  @$pb.TagNumber(5)
+  $core.bool hasDestinationPath() => $_has(4);
+  @$pb.TagNumber(5)
+  void clearDestinationPath() => clearField(5);
+}
+
+class BlockJournalResponse extends $pb.GeneratedMessage {
+  factory BlockJournalResponse({
+    $core.String? path,
+    $core.List<$core.int>? content,
+    $fixnum.Int64? size,
+    $core.bool? enabled,
+  }) {
+    final $result = create();
+    if (path != null) {
+      $result.path = path;
+    }
+    if (content != null) {
+      $result.content = content;
+    }
+    if (size != null) {
+      $result.size = size;
+    }
+    if (enabled != null) {
+      $result.enabled = enabled;
+    }
+    return $result;
+  }
+  BlockJournalResponse._() : super();
+  factory BlockJournalResponse.fromBuffer($core.List<$core.int> i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromBuffer(i, r);
+  factory BlockJournalResponse.fromJson($core.String i, [$pb.ExtensionRegistry r = $pb.ExtensionRegistry.EMPTY]) => create()..mergeFromJson(i, r);
+
+  static final $pb.BuilderInfo _i = $pb.BuilderInfo(_omitMessageNames ? '' : 'BlockJournalResponse', package: const $pb.PackageName(_omitMessageNames ? '' : 'hcore'), createEmptyInstance: create)
+    ..aOS(1, _omitFieldNames ? '' : 'path')
+    ..a<$core.List<$core.int>>(2, _omitFieldNames ? '' : 'content', $pb.PbFieldType.OY)
+    ..aInt64(3, _omitFieldNames ? '' : 'size')
+    ..aOB(4, _omitFieldNames ? '' : 'enabled')
+    ..hasRequiredFields = false
+  ;
+
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.deepCopy] instead. '
+  'Will be removed in next major version')
+  BlockJournalResponse clone() => BlockJournalResponse()..mergeFromMessage(this);
+  @$core.Deprecated(
+  'Using this can add significant overhead to your binary. '
+  'Use [GeneratedMessageGenericExtensions.rebuild] instead. '
+  'Will be removed in next major version')
+  BlockJournalResponse copyWith(void Function(BlockJournalResponse) updates) => super.copyWith((message) => updates(message as BlockJournalResponse)) as BlockJournalResponse;
+
+  $pb.BuilderInfo get info_ => _i;
+
+  @$core.pragma('dart2js:noInline')
+  static BlockJournalResponse create() => BlockJournalResponse._();
+  BlockJournalResponse createEmptyInstance() => create();
+  static $pb.PbList<BlockJournalResponse> createRepeated() => $pb.PbList<BlockJournalResponse>();
+  @$core.pragma('dart2js:noInline')
+  static BlockJournalResponse getDefault() => _defaultInstance ??= $pb.GeneratedMessage.$_defaultFor<BlockJournalResponse>(create);
+  static BlockJournalResponse? _defaultInstance;
+
+  @$pb.TagNumber(1)
+  $core.String get path => $_getSZ(0);
+  @$pb.TagNumber(1)
+  set path($core.String v) { $_setString(0, v); }
+  @$pb.TagNumber(1)
+  $core.bool hasPath() => $_has(0);
+  @$pb.TagNumber(1)
+  void clearPath() => clearField(1);
+
+  @$pb.TagNumber(2)
+  $core.List<$core.int> get content => $_getN(1);
+  @$pb.TagNumber(2)
+  set content($core.List<$core.int> v) { $_setBytes(1, v); }
+  @$pb.TagNumber(2)
+  $core.bool hasContent() => $_has(1);
+  @$pb.TagNumber(2)
+  void clearContent() => clearField(2);
+
+  @$pb.TagNumber(3)
+  $fixnum.Int64 get size => $_getI64(2);
+  @$pb.TagNumber(3)
+  set size($fixnum.Int64 v) { $_setInt64(2, v); }
+  @$pb.TagNumber(3)
+  $core.bool hasSize() => $_has(2);
+  @$pb.TagNumber(3)
+  void clearSize() => clearField(3);
+
+  @$pb.TagNumber(4)
+  $core.bool get enabled => $_getBF(3);
+  @$pb.TagNumber(4)
+  set enabled($core.bool v) { $_setBool(3, v); }
+  @$pb.TagNumber(4)
+  $core.bool hasEnabled() => $_has(3);
+  @$pb.TagNumber(4)
+  void clearEnabled() => clearField(4);
+}
+
 class LANIPResponse extends $pb.GeneratedMessage {
   factory LANIPResponse({
     $core.String? ip,

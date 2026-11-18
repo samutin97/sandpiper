@@ -22,6 +22,10 @@ class SingboxConfigOption with _$SingboxConfigOption {
     @Default(true) bool useSystemTlsEngine,
     required bool executeConfigAsIs,
     required LogLevel logLevel,
+
+    /// The core's journal of the attempts to connect, for a report of a block (`block-journal`).
+    @Default(true) bool blockJournal,
+
     required bool resolveDestination,
     required IPv6Mode ipv6Mode,
     required String remoteDnsAddress,

@@ -138,6 +138,10 @@ class CoreClient extends $grpc.Client {
       '/hcore.Core/ListCrashReports',
       ($1.Empty value) => value.writeToBuffer(),
       ($core.List<$core.int> value) => $0.CrashReportList.fromBuffer(value));
+  static final _$blockJournal = $grpc.ClientMethod<$0.BlockJournalRequest, $0.BlockJournalResponse>(
+      '/hcore.Core/BlockJournal',
+      ($0.BlockJournalRequest value) => value.writeToBuffer(),
+      ($core.List<$core.int> value) => $0.BlockJournalResponse.fromBuffer(value));
   static final _$exportDiagnostics = $grpc.ClientMethod<$0.ExportDiagnosticsRequest, $0.ExportDiagnosticsResponse>(
       '/hcore.Core/ExportDiagnostics',
       ($0.ExportDiagnosticsRequest value) => value.writeToBuffer(),
@@ -267,6 +271,10 @@ class CoreClient extends $grpc.Client {
 
   $grpc.ResponseFuture<$0.ExportDiagnosticsResponse> exportDiagnostics($0.ExportDiagnosticsRequest request, {$grpc.CallOptions? options}) {
     return $createUnaryCall(_$exportDiagnostics, request, options: options);
+  }
+
+  $grpc.ResponseFuture<$0.BlockJournalResponse> blockJournal($0.BlockJournalRequest request, {$grpc.CallOptions? options}) {
+    return $createUnaryCall(_$blockJournal, request, options: options);
   }
 }
 
@@ -485,6 +493,13 @@ abstract class CoreServiceBase extends $grpc.Service {
         false,
         ($core.List<$core.int> value) => $0.ExportDiagnosticsRequest.fromBuffer(value),
         ($0.ExportDiagnosticsResponse value) => value.writeToBuffer()));
+    $addMethod($grpc.ServiceMethod<$0.BlockJournalRequest, $0.BlockJournalResponse>(
+        'BlockJournal',
+        blockJournal_Pre,
+        false,
+        false,
+        ($core.List<$core.int> value) => $0.BlockJournalRequest.fromBuffer(value),
+        ($0.BlockJournalResponse value) => value.writeToBuffer()));
   }
 
   $async.Future<$0.CoreInfoResponse> start_Pre($grpc.ServiceCall call, $async.Future<$0.StartRequest> request) async {
@@ -607,6 +622,10 @@ abstract class CoreServiceBase extends $grpc.Service {
     return exportDiagnostics(call, await request);
   }
 
+  $async.Future<$0.BlockJournalResponse> blockJournal_Pre($grpc.ServiceCall call, $async.Future<$0.BlockJournalRequest> request) async {
+    return blockJournal(call, await request);
+  }
+
   $async.Future<$0.CoreInfoResponse> start($grpc.ServiceCall call, $0.StartRequest request);
   $async.Stream<$0.CoreInfoResponse> coreInfoListener($grpc.ServiceCall call, $1.Empty request);
   $async.Stream<$0.OutboundGroupList> outboundsInfo($grpc.ServiceCall call, $1.Empty request);
@@ -637,4 +656,5 @@ abstract class CoreServiceBase extends $grpc.Service {
   $async.Stream<$0.EnsureAdminBgServiceEvent> ensureAdminBgService($grpc.ServiceCall call, $0.EnsureAdminBgServiceRequest request);
   $async.Future<$0.CrashReportList> listCrashReports($grpc.ServiceCall call, $1.Empty request);
   $async.Future<$0.ExportDiagnosticsResponse> exportDiagnostics($grpc.ServiceCall call, $0.ExportDiagnosticsRequest request);
+  $async.Future<$0.BlockJournalResponse> blockJournal($grpc.ServiceCall call, $0.BlockJournalRequest request);
 }

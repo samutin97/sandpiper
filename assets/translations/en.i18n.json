@@ -444,7 +444,21 @@
         "useSystemTlsEngineMsg": "Connections without a TLS fingerprint use the TLS of macOS, iOS, or Windows once it passes a check on this device; otherwise they look like Chrome.",
         "uploadTestSize": "Upload test size",
         "megabytes": "$n MB",
-        "speedTest": "Speed test"
+        "speedTest": "Speed test",
+        "blockJournal": "Connection journal for block reports",
+        "blockJournalMsg": "Records connection attempts, checks and the choice of server variants — never the sites you visit. Helps to find out what got blocked.",
+        "blockReport": {
+          "title": "Collect a block report",
+          "msg": "A zip of the connection journal and the logs. The logs have addresses and keys removed; the journal holds the VPN servers' addresses, not the sites you visit.",
+          "collecting": "Collecting the block report…",
+          "failed": "The block report could not be made",
+          "clear": "Clear the connection journal",
+          "sizeNow": "Takes $size now",
+          "clearConfirmTitle": "Clear the connection journal?",
+          "clearConfirmMsg": "Everything recorded so far is deleted.",
+          "cleared": "The connection journal is cleared",
+          "clearFailed": "The connection journal could not be cleared"
+        }
       },
       "routing": {
         "title": "Routing",

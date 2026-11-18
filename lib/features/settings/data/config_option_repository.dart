@@ -58,6 +58,10 @@ abstract class ConfigOptions {
   );
   static final useSystemTlsEngine = PreferencesNotifier.create<bool, bool>("use-system-tls-engine", true);
   // static final blockAds = PreferencesNotifier.create<bool, bool>("block-ads", false);
+  /// The core's block journal (`block-journal`): what it writes about the attempts to connect, for a
+  /// report of a block; on unless turned off.
+  static final blockJournal = PreferencesNotifier.create<bool, bool>("block-journal", true);
+
   static final logLevel = PreferencesNotifier.create<LogLevel, String>(
     "log-level",
     LogLevel.warn,
@@ -551,6 +555,7 @@ abstract class ConfigOptions {
     "use-system-tls-engine": useSystemTlsEngine,
     "service-mode": serviceMode,
     "log-level": logLevel,
+    "block-journal": blockJournal,
     "resolve-destination": resolveDestination,
     "ipv6-mode": ipv6Mode,
     "remote-dns-address": remoteDnsAddress,
@@ -682,6 +687,7 @@ abstract class ConfigOptions {
       useSystemTlsEngine: ref.watch(useSystemTlsEngine),
       executeConfigAsIs: false,
       logLevel: ref.watch(logLevel),
+      blockJournal: ref.watch(blockJournal),
       resolveDestination: ref.watch(resolveDestination),
       ipv6Mode: ref.watch(ipv6Mode),
       remoteDnsAddress: ref.watch(remoteDnsAddress),

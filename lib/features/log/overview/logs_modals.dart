@@ -12,6 +12,7 @@ import 'package:hiddify/core/logger/sinks/file_sink.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/router/bottom_sheets/bottom_sheets_notifier.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
+import 'package:hiddify/features/crash_report/widget/block_report_action.dart';
 import 'package:hiddify/features/log/data/log_data_providers.dart';
 import 'package:hiddify/features/log/data/log_path_resolver.dart';
 import 'package:hiddify/features/log/overview/logs_overview_notifier.dart';
@@ -83,6 +84,16 @@ class LogsShareModal extends ConsumerWidget {
             onTap: () async {
               Navigator.of(context).pop();
               await ref.read(dialogNotifierProvider.notifier).showReportProblem();
+            },
+          ),
+          // the connection journal and the logs, for working out what got blocked
+          ListTile(
+            leading: const Icon(FluentIcons.shield_error_20_regular),
+            title: Text(t.pages.settings.general.blockReport.title),
+            subtitle: Text(t.pages.settings.general.blockReport.msg),
+            onTap: () async {
+              Navigator.of(context).pop();
+              await collectAndSaveBlockReport(ref);
             },
           ),
         ],

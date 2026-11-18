@@ -2,12 +2,16 @@ import 'dart:io';
 
 import 'package:dartx/dartx.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hiddify/core/haptic/haptic_service.dart';
 import 'package:hiddify/core/localization/translations.dart';
+import 'package:hiddify/core/notification/in_app_notification_controller.dart';
 import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/features/auto_start/notifier/auto_start_notifier.dart';
 import 'package:hiddify/features/common/general_pref_tiles.dart';
+import 'package:hiddify/features/crash_report/data/block_report_exporter.dart';
+import 'package:hiddify/features/crash_report/widget/block_report_action.dart';
 import 'package:hiddify/features/settings/data/android_security.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/features/settings/widget/preference_tile.dart';
@@ -16,6 +20,8 @@ import 'package:hiddify/singbox/model/singbox_config_enum.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:humanizer/humanizer.dart';
+
+final _log = appLogger('GeneralPage');
 
 class GeneralPage extends HookConsumerWidget {
   const GeneralPage({super.key});
@@ -186,8 +192,79 @@ class GeneralPage extends HookConsumerWidget {
               value: ref.watch(ConfigOptions.useSystemTlsEngine),
               onChanged: ref.read(ConfigOptions.useSystemTlsEngine.notifier).update,
             ),
+          // like the TLS switch above, it reaches the core with the next settings change: no toast
+          SwitchListTile.adaptive(
+            title: Text(t.pages.settings.general.blockJournal),
+            subtitle: Text(t.pages.settings.general.blockJournalMsg),
+            secondary: const Icon(Icons.fact_check_rounded),
+            value: ref.watch(ConfigOptions.blockJournal),
+            onChanged: ref.read(ConfigOptions.blockJournal.notifier).update,
+          ),
+          const _BlockReportTiles(),
         ],
       ),
+    );
+  }
+}
+
+/// Collecting a block report and clearing the journal it is made of.
+class _BlockReportTiles extends HookConsumerWidget {
+  const _BlockReportTiles();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = ref.watch(translationsProvider).requireValue;
+    final busy = useState(false);
+    // bumped after a clear, so the size is asked again
+    final reload = useState(0);
+    final sizeFuture = useMemoized(() => ref.read(blockReportExporterProvider).size(), [reload.value]);
+    final size = useFuture(sizeFuture);
+
+    return Column(
+      children: [
+        ListTile(
+          title: Text(t.pages.settings.general.blockReport.title),
+          subtitle: Text(t.pages.settings.general.blockReport.msg),
+          leading: const Icon(Icons.summarize_rounded),
+          isThreeLine: true,
+          trailing: busy.value
+              ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+              : null,
+          enabled: !busy.value,
+          onTap: () async {
+            busy.value = true;
+            try {
+              await collectAndSaveBlockReport(ref);
+            } finally {
+              if (context.mounted) busy.value = false;
+            }
+          },
+        ),
+        ListTile(
+          title: Text(t.pages.settings.general.blockReport.clear),
+          // nothing while the size loads, and when it cannot be read
+          subtitle: size.hasData
+              ? Text(t.pages.settings.general.blockReport.sizeNow(size: size.requireData.size()))
+              : null,
+          leading: const Icon(Icons.delete_sweep_rounded),
+          onTap: () async {
+            final report = t.pages.settings.general.blockReport;
+            final confirmed = await ref
+                .read(dialogNotifierProvider.notifier)
+                .showConfirmation(title: report.clearConfirmTitle, message: report.clearConfirmMsg);
+            if (!confirmed) return;
+            final notifications = ref.read(inAppNotificationControllerProvider);
+            try {
+              await ref.read(blockReportExporterProvider).clear();
+              notifications.showSuccessToast(report.cleared);
+            } catch (e, stack) {
+              _log.error('clearing the connection journal failed', e, stack);
+              notifications.showErrorToast(report.clearFailed);
+            }
+            if (context.mounted) reload.value++;
+          },
+        ),
+      ],
     );
   }
 }
