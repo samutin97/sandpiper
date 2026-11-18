@@ -10,6 +10,7 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/router/dialog/widgets/admin_bg_service_dialogs.dart';
 import 'package:hiddify/core/utils/exception_handler.dart';
+import 'package:hiddify/features/connection/data/local_port_repair.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
 import 'package:hiddify/features/profile/data/profile_data_providers.dart';
@@ -85,6 +86,9 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
   Stream<ConnectionStatus> watchConnectionStatus() {
     return singbox.watchStatus().map(
       (event) => switch (event) {
+        // a start that failed on a local port the connect picks again and retries is not a failure
+        CoreStopped(:final message) when _portRepairPending && _portRepair.failedKey(message ?? '') != null =>
+          const Connecting(),
         CoreStopped() => Disconnected(event.getCoreAlert()),
         CoreStarting() => const Connecting(),
         CoreWaiting() => const Waiting(),
@@ -110,12 +114,52 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
       while (true) {
         _vpnChoiceShown = false;
         _adminRefused = false;
-        final result = await _connectOnce(activeProfile, disableMemoryLimit).run();
+        final result = await _connectRepairingPort(activeProfile, disableMemoryLimit);
         if (result.isRight() || !_vpnChoiceShown || !_adminRefused) return result;
         loggy.info("administrator permission was not given, offering the choice again");
       }
     }),
   );
+
+  /// Set while the first start of a connect runs and a failed local port can still be repaired.
+  var _portRepairPending = false;
+
+  /// D9-01: the local ports the app picked at random (the local proxy, the Clash API) and may pick
+  /// again when the core cannot open them; the others the user set keep theirs.
+  late final _portRepair = LocalPortRepair(
+    ports: () => {
+      "mixed-port": ref.read(ConfigOptions.mixedPort),
+      "clash-api-port": ref.read(ConfigOptions.clashApiPort),
+      "lan-sharing-port": ref.read(ConfigOptions.lanSharingPort),
+      "tproxy-port": ref.read(ConfigOptions.tproxyPort),
+      "redirect-port": ref.read(ConfigOptions.redirectPort),
+      "direct-port": ref.read(ConfigOptions.directPort),
+    },
+    repairable: const {"mixed-port", "clash-api-port"},
+    save: (key, port) => switch (key) {
+      "mixed-port" => ref.read(ConfigOptions.mixedPort.notifier).update(port),
+      _ => ref.read(ConfigOptions.clashApiPort.notifier).update(port),
+    },
+    onRepaired: (key, from, to) => loggy.warning("the core could not open the local port $from ($key): using $to"),
+  );
+
+  /// A connect whose start, when it fails to open a local port the app picked, gets a new port and
+  /// runs once more (D9-01).
+  Future<Either<ConnectionFailure, Unit>> _connectRepairingPort(
+    ProfileEntity activeProfile,
+    bool disableMemoryLimit,
+  ) async {
+    var attempts = 0;
+    _portRepairPending = true;
+    try {
+      return await _portRepair.run(() {
+        if (attempts++ > 0) _portRepairPending = false;
+        return _connectOnce(activeProfile, disableMemoryLimit).run();
+      }, (failure) => "$failure");
+    } finally {
+      _portRepairPending = false;
+    }
+  }
 
   TaskEither<ConnectionFailure, Unit> _connectOnce(ProfileEntity activeProfile, bool disableMemoryLimit) =>
       applyConfigOption(activeProfile).flatMap(

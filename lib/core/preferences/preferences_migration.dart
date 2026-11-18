@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:hiddify/core/utils/local_port.dart';
 import 'package:hiddify/core/utils/proxy_secret.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -207,7 +208,8 @@ class ForkVersion1Migration extends PreferencesMigrationStep with InfraLogger {
     }
     final port = sharedPreferences.getInt("mixed-port");
     if (port == null || port == 12334) {
-      await sharedPreferences.setInt("mixed-port", 20000 + random.nextInt(40000));
+      // checked by a bind: Windows reserves ranges of ports, and another program may hold one (D9-01)
+      await sharedPreferences.setInt("mixed-port", await pickLocalPort(random: random));
     }
     if ((sharedPreferences.getString("tun-address-seed") ?? '').isEmpty) {
       final seed = List.generate(16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
@@ -228,12 +230,7 @@ class ForkVersion2Migration extends PreferencesMigrationStep with InfraLogger {
   Future<void> migrate() async {
     final port = sharedPreferences.getInt("clash-api-port");
     if (port != null && port != 16756) return;
-    final random = Random.secure();
     final mixed = sharedPreferences.getInt("mixed-port");
-    int candidate;
-    do {
-      candidate = 20000 + random.nextInt(40000);
-    } while (candidate == mixed);
-    await sharedPreferences.setInt("clash-api-port", candidate);
+    await sharedPreferences.setInt("clash-api-port", await pickLocalPort(avoid: {if (mixed != null) mixed}));
   }
 }
