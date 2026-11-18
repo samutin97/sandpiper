@@ -1,0 +1,175 @@
+# Does the engine inside the built macOS app carry traffic? Run by hand with the id of a
+# sandpiper-release run; it takes that run's `app-macos` artifact.
+#
+# The app holds the core's command-line launcher, Contents/Helpers/Hiddify Core.app/Contents/MacOS/Hiddify
+# (macos/scripts/embed-core-helper.sh; hiddify-core/cmd/launcher/main.c), which loads
+# Contents/Frameworks/hiddify-core.dylib and calls its parseCli(). Its `srun -c <file>` command
+# (hiddify-core/cmd/cmd_sing_run.go) runs a plain sing-box JSON config. Two such processes run here:
+#   curl --socks5-hostname -> client (mixed inbound) -> shadowsocks outbound -> server (shadowsocks
+#   inbound, direct outbound) -> python http.server
+# all on 127.0.0.1, with throwaway keys made in the job. No secrets, no server but GitHub.
+name: sandpiper-macos-engine
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Run id of sandpiper-release.yml to take the app-macos artifact from"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  engine:
+    runs-on: macos-26
+    timeout-minutes: 15
+    env:
+      APP_NAME: Hiddify
+      HELPER_REL: Contents/Helpers/Hiddify Core.app/Contents/MacOS/Hiddify
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: app-macos
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: engine-in
+
+      - name: Take the app out of the dmg
+        run: |
+          set -euo pipefail
+          dmg="$(find engine-in -name '*.dmg' -type f | head -1)"
+          [[ -n "$dmg" ]] || { echo "::error::no dmg in the artifact"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/app" "$RUNNER_TEMP/mnt" engine-out
+          hdiutil attach "$dmg" -nobrowse -noverify -noautoopen -readonly -mountpoint "$RUNNER_TEMP/mnt"
+          rc=0
+          cp -R "$RUNNER_TEMP/mnt/$APP_NAME.app" "$RUNNER_TEMP/app/" || rc=$?
+          hdiutil detach "$RUNNER_TEMP/mnt" -force || true
+          [[ $rc -eq 0 ]] || { echo "::error::$APP_NAME.app is not in the dmg"; exit 1; }
+          app="$RUNNER_TEMP/app/$APP_NAME.app"
+          xattr -dr com.apple.quarantine "$app" || true
+          helper="$app/$HELPER_REL"
+          [[ -x "$helper" ]] || { echo "::error::no core launcher at $HELPER_REL"; find "$app/Contents/Helpers" | head -20; exit 1; }
+          echo "HELPER=$helper" >> "$GITHUB_ENV"
+          {
+            echo "host: $(uname -m)"
+            echo "launcher archs: $(lipo -archs "$helper")"
+            echo "core library archs: $(lipo -archs "$app/Contents/Frameworks/hiddify-core.dylib")"
+            codesign --verify --deep --strict "$app" 2>&1 && echo "codesign: ok"
+          } | tee engine-out/static.txt
+
+      - name: Write the test script
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/engine-test.sh" <<'SCRIPT'
+          #!/bin/bash
+          # usage: engine-test.sh <label> [arch -x86_64]
+          set -euo pipefail
+          label="$1"; shift
+          pre=("$@")
+          out="$PWD/engine-out/$label"
+          work="$RUNNER_TEMP/engine-$label"
+          mkdir -p "$out" "$work/www" "$work/server" "$work/client"
+          http_port=18080; ss_port=18443; socks_port=18808
+          pids=()
+          cleanup() { for p in "${pids[@]:-}"; do [[ -n "$p" ]] && kill "$p" 2>/dev/null || true; done; }
+          trap cleanup EXIT
+
+          if [[ ${#pre[@]} -gt 0 ]] && ! ${pre[@]+"${pre[@]}"} /usr/bin/true 2>/dev/null; then
+            echo "skipped: $label cannot run here (no Rosetta?)" | tee "$out/result.txt"
+            exit 0
+          fi
+
+          wait_port() { for _ in $(seq 1 30); do nc -z 127.0.0.1 "$1" 2>/dev/null && return 0; sleep 1; done; return 1; }
+
+          head -c 307200 /dev/urandom > "$work/www/payload.bin"
+          want_sha="$(shasum -a 256 "$work/www/payload.bin" | cut -d' ' -f1)"
+          want_size="$(wc -c < "$work/www/payload.bin" | tr -d ' ')"
+          key="$(openssl rand -base64 16)"
+
+          cat > "$work/server/config.json" <<JSON
+          {
+            "log": {"level": "info"},
+            "inbounds": [{"type": "shadowsocks", "tag": "in", "listen": "127.0.0.1", "listen_port": $ss_port,
+                          "method": "2022-blake3-aes-128-gcm", "password": "$key"}],
+            "outbounds": [{"type": "direct", "tag": "direct"}]
+          }
+          JSON
+          cat > "$work/client/config.json" <<JSON
+          {
+            "log": {"level": "info"},
+            "inbounds": [{"type": "mixed", "tag": "in", "listen": "127.0.0.1", "listen_port": $socks_port}],
+            "outbounds": [{"type": "shadowsocks", "tag": "proxy", "server": "127.0.0.1", "server_port": $ss_port,
+                           "method": "2022-blake3-aes-128-gcm", "password": "$key"}],
+            "route": {"final": "proxy"}
+          }
+          JSON
+
+          (cd "$work/www" && exec python3 -m http.server "$http_port" --bind 127.0.0.1) > "$out/http.log" 2>&1 &
+          pids+=($!)
+          wait_port "$http_port" || { echo "::error::http server did not start"; exit 1; }
+
+          ${pre[@]+"${pre[@]}"} "$HELPER" srun --disable-color -D "$work/server" -c "$work/server/config.json" > "$out/server.log" 2>&1 &
+          server_pid=$!; pids+=($server_pid)
+          wait_port "$ss_port" || { echo "::error::[$label] the server instance did not listen"; tail -n 40 "$out/server.log"; exit 1; }
+          ${pre[@]+"${pre[@]}"} "$HELPER" srun --disable-color -D "$work/client" -c "$work/client/config.json" > "$out/client.log" 2>&1 &
+          pids+=($!)
+          wait_port "$socks_port" || { echo "::error::[$label] the client instance did not listen"; tail -n 40 "$out/client.log"; exit 1; }
+          echo "both instances listen"
+
+          curl --silent --show-error --fail --max-time 30 --socks5-hostname "127.0.0.1:$socks_port" \
+            -o "$work/got.bin" "http://127.0.0.1:$http_port/payload.bin"
+          got_sha="$(shasum -a 256 "$work/got.bin" | cut -d' ' -f1)"
+          got_size="$(wc -c < "$work/got.bin" | tr -d ' ')"
+          echo "size: $got_size (want $want_size)"; echo "sha256: $got_sha (want $want_sha)"
+          [[ "$got_size" == "$want_size" && "$got_sha" == "$want_sha" ]] || { echo "::error::[$label] the download differs"; exit 1; }
+
+          # control: with the server instance gone the same download must fail, so it really went through it
+          kill "$server_pid" 2>/dev/null || true
+          sleep 2
+          if curl --silent --fail --max-time 10 --socks5-hostname "127.0.0.1:$socks_port" \
+               -o /dev/null "http://127.0.0.1:$http_port/payload.bin"; then
+            echo "::error::[$label] the download worked without the server instance"; exit 1
+          fi
+          echo "control ok: no download without the server instance"
+          echo "ok: $got_size bytes, sha256 matches, through client -> shadowsocks -> server" | tee "$out/result.txt"
+          SCRIPT
+          chmod +x "$RUNNER_TEMP/engine-test.sh"
+
+      - name: Engine over loopback, native
+        run: |
+          set -euo pipefail
+          label="native-$(uname -m)"
+          echo "LABEL_NATIVE=$label" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/engine-test.sh" "$label" 2>&1 | tee "engine-out/$label.txt"
+
+      - name: Engine over loopback, x86_64 (Rosetta)
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          if [[ "$(uname -m)" == x86_64 ]]; then echo "host is x86_64 already: nothing to add" | tee engine-out/x86_64-note.txt; exit 0; fi
+          "$RUNNER_TEMP/engine-test.sh" x86_64-rosetta arch -x86_64 2>&1 | tee engine-out/x86_64-rosetta.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### macOS engine over loopback (release run ${{ inputs.run_id }})"
+            echo ""
+            echo "Path: curl SOCKS5 -> engine (mixed in, shadowsocks out) -> engine (shadowsocks in, direct) -> local http.server, 300 KiB, size and sha256 compared; control: no download once the server instance is stopped."
+            echo ""
+            for f in engine-out/*/result.txt; do
+              [[ -f "$f" ]] && echo "- $(basename "$(dirname "$f")"): $(cat "$f")"
+            done
+            [[ -f engine-out/static.txt ]] && { echo ""; echo '```'; cat engine-out/static.txt; echo '```'; }
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: macos-engine
+          path: engine-out
+          retention-days: 3
+          if-no-files-found: ignore
