@@ -257,7 +257,13 @@ class UpdateProfileNotifier extends _$UpdateProfileNotifier with AppLogger {
 
               await ref.read(activeProfileProvider.future).then((active) async {
                 if (active != null && active.id == profile.id) {
-                  await ref.read(connectionNotifierProvider.notifier).reconnect(profile);
+                  // the profile as the update stored it: the settings sent to the core are made from
+                  // its headers, and the new ones carry the server's new ranking (tier-policy) and
+                  // probe. [profile] was read before the update: with it the core kept the old
+                  // ranking, over its hot reload and over the restart after one, until the app was
+                  // started again (a second server added to the subscription was never tried).
+                  final updated = (await _profilesRepo.getById(profile.id).run()).getOrElse((_) => null);
+                  await ref.read(connectionNotifierProvider.notifier).reconnect(updated ?? active);
                 }
               });
               return unit;
