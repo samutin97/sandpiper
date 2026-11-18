@@ -1,6 +1,7 @@
 package app.sandpiperbird.android.bg
 
 import android.app.ActivityManager
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -30,7 +31,21 @@ import app.sandpiperbird.android.R
 class TierPrompt(private val service: Service) {
     companion object {
         private const val notificationId = 3
-        private const val channel = "tier_confirm"
+
+        // P-1: a channel's sound and vibration are fixed once it is created, and "tier_confirm" was
+        // created without vibration (HyperOS played the sound, no vibration): a new channel, with
+        // vibration, under the same name for the user; the old one is deleted.
+        private const val channel = "tier_confirm_vibrate"
+        private const val oldChannel = "tier_confirm"
+
+        /** Short, twice: the question waits for the user, not an alarm. */
+        private val vibration = longArrayOf(0, 250, 150, 250)
+    }
+
+    init {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            runCatching { Application.notification.deleteNotificationChannel(oldChannel) }
+        }
     }
 
     /** The last resort of the episode under way, "" without one. */
@@ -73,7 +88,12 @@ class TierPrompt(private val service: Service) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Application.notification.createNotificationChannel(
-                    NotificationChannel(channel, service.getString(R.string.tier_channel), NotificationManager.IMPORTANCE_HIGH)
+                    NotificationChannel(channel, service.getString(R.string.tier_channel), NotificationManager.IMPORTANCE_HIGH).apply {
+                        enableVibration(true)
+                        vibrationPattern = vibration
+                        // the lock screen shows the public version: no connection, not the proxy
+                        lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+                    }
                 )
             }
             val open = PendingIntent.getActivity(
@@ -91,7 +111,9 @@ class TierPrompt(private val service: Service) {
                 .setStyle(NotificationCompat.BigTextStyle().bigText(body))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_STATUS)
-                .setDefaults(NotificationCompat.DEFAULT_ALL)
+                // before Android 8 the notification itself carries the sound and the vibration
+                .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_LIGHTS)
+                .setVibrate(vibration)
                 .setAutoCancel(true)
                 .setContentIntent(open)
                 // the lock screen: the app's name and that there is no connection, not the proxy
