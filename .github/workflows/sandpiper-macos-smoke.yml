@@ -1,0 +1,208 @@
+# Launch check for the macOS app built by sandpiper-release.yml: does the .app start and stay alive.
+# Run by hand with the id of a sandpiper-release run; it takes that run's `app-macos` artifact.
+# Nothing is imported, nothing connects: the app is only started, watched and quit. No secrets.
+name: sandpiper-macos-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Run id of sandpiper-release.yml to take the app-macos artifact from"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  smoke:
+    runs-on: macos-26
+    timeout-minutes: 15
+    env:
+      APP_NAME: Hiddify              # PRODUCT_NAME (macos/Runner/Configs/AppInfo.xcconfig)
+      BUNDLE_ID: apple.hiddify.com   # macos/Runner/Configs/NetworkExtension.xcconfig
+      CORE_LIB: hiddify-core.dylib   # macos/Runner.xcodeproj: copied to Contents/Frameworks
+      WAIT_SECONDS: "40"
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          name: app-macos
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: smoke-in
+
+      - name: Take the app out of the dmg
+        run: |
+          set -euo pipefail
+          dmg="$(find smoke-in -name '*.dmg' -type f | head -1)"
+          [[ -n "$dmg" ]] || { echo "::error::no dmg in the artifact"; exit 1; }
+          echo "dmg: $dmg"
+          mkdir -p "$RUNNER_TEMP/app" "$RUNNER_TEMP/mnt" smoke-out
+          hdiutil attach "$dmg" -nobrowse -noverify -noautoopen -readonly -mountpoint "$RUNNER_TEMP/mnt"
+          ls -la "$RUNNER_TEMP/mnt"
+          rc=0
+          cp -R "$RUNNER_TEMP/mnt/$APP_NAME.app" "$RUNNER_TEMP/app/" || rc=$?
+          hdiutil detach "$RUNNER_TEMP/mnt" -force || true
+          [[ $rc -eq 0 ]] || { echo "::error::$APP_NAME.app is not in the dmg"; exit 1; }
+          echo "APP=$RUNNER_TEMP/app/$APP_NAME.app" >> "$GITHUB_ENV"
+
+      - name: Static checks
+        run: |
+          set -euo pipefail
+          {
+            plist="$APP/Contents/Info.plist"
+            exe="$APP/Contents/MacOS/$APP_NAME"
+            lib="$APP/Contents/Frameworks/$CORE_LIB"
+            [[ -x "$exe" ]] || { echo "::error::no executable $exe"; ls -la "$APP/Contents/MacOS"; exit 1; }
+            [[ -f "$lib" ]] || { echo "::error::no core library $lib"; ls -la "$APP/Contents/Frameworks"; exit 1; }
+
+            echo "== codesign --verify =="
+            codesign --verify --deep --strict --verbose=2 "$APP" 2>&1
+            echo "== codesign -dv =="
+            codesign -dv "$APP" 2>&1
+            echo "== architectures =="
+            exe_archs="$(lipo -archs "$exe")"
+            lib_archs="$(lipo -archs "$lib")"
+            echo "executable: $exe_archs"
+            echo "core library: $lib_archs"
+            for a in x86_64 arm64; do
+              [[ " $exe_archs " == *" $a "* ]] || { echo "::error::executable has no $a"; exit 1; }
+              [[ " $lib_archs " == *" $a "* ]] || { echo "::error::core library has no $a"; exit 1; }
+            done
+            echo "== version =="
+            short="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")"
+            build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")"
+            bid="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")"
+            echo "CFBundleShortVersionString: $short"
+            echo "CFBundleVersion: $build"
+            echo "CFBundleIdentifier: $bid"
+            [[ "$bid" == "$BUNDLE_ID" ]] || echo "::warning::bundle id is $bid, expected $BUNDLE_ID"
+            echo "== Contents/Frameworks =="
+            ls -la "$APP/Contents/Frameworks"
+            {
+              echo "APP_VERSION=$short ($build)"
+              echo "APP_ARCHS=$exe_archs"
+              echo "APP_BUNDLE_ID=$bid"
+            } >> "$GITHUB_ENV"
+          } | tee smoke-out/static-checks.txt
+
+      - name: Launch the app and watch it
+        run: |
+          set -euo pipefail
+          exe="$APP/Contents/MacOS/$APP_NAME"
+          xattr -dr com.apple.quarantine "$APP" || true
+          open -n -g "$APP"
+          pid=""
+          for _ in $(seq 1 20); do
+            pid="$(pgrep -f "$exe" | head -1 || true)"
+            if [[ -n "$pid" ]]; then break; fi
+            sleep 1
+          done
+          [[ -n "$pid" ]] || { echo "::error::the app did not start (no process of $exe)"; exit 1; }
+          echo "APP_PID=$pid" >> "$GITHUB_ENV"
+          echo "pid: $pid"
+
+          alive=0
+          for _ in $(seq 1 "$WAIT_SECONDS"); do
+            if kill -0 "$pid" 2>/dev/null; then alive=$((alive + 1)); else break; fi
+            sleep 1
+          done
+          echo "ALIVE_SECONDS=$alive" >> "$GITHUB_ENV"
+
+          # everything below is evidence; it is collected even if the process is gone
+          {
+            echo "== ps =="
+            ps -p "$pid" -o pid,etime,rss,command || true
+            echo "== listening sockets of the app =="
+            lsof -nP -iTCP -sTCP:LISTEN -a -p "$pid" || echo "(none)"
+            echo "== core library in memory =="
+            core="${CORE_LIB%.dylib}"
+            { vmmap "$pid" 2>/dev/null | grep -i "$core" | head -5; } || true
+            { lsof -p "$pid" 2>/dev/null | grep -i "$core" | head -5; } || true
+          } 2>&1 | tee smoke-out/runtime.txt
+
+          mkdir -p smoke-out/logs
+          data=""
+          for d in "$HOME/Library/Application Support/$BUNDLE_ID" \
+                   "$HOME/Library/Application Support/$APP_NAME" \
+                   "$HOME/Library/Containers/$BUNDLE_ID/Data/Library/Application Support/$BUNDLE_ID"; do
+            if [[ -d "$d" ]]; then data="$d"; break; fi
+          done
+          if [[ -z "$data" ]]; then
+            echo "::warning::no data directory found"
+            ls -la "$HOME/Library/Application Support" || true
+          else
+            echo "data dir: $data"
+            ls -laR "$data" | head -150 || true
+            for f in app.log data/box.log; do
+              if [[ -f "$data/$f" ]]; then
+                echo "---- $f (last 80 lines) ----"
+                tail -n 80 "$data/$f" | tee "smoke-out/logs/$(basename "$f")"
+              else
+                echo "(no $f)"
+              fi
+            done
+            if [[ -d "$data/app_crashes" ]]; then cp -R "$data/app_crashes" smoke-out/logs/; fi
+            if [[ -d "$data/crash_reports" ]]; then cp -R "$data/crash_reports" smoke-out/logs/; fi
+          fi
+          [[ "$alive" -ge "$WAIT_SECONDS" ]] || { echo "::error::the app was alive only $alive s of $WAIT_SECONDS"; exit 1; }
+
+      - name: Screenshot
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          screencapture -x smoke-out/screen.png
+          ls -la smoke-out/screen.png
+
+      - name: Quit the app and look for crash reports
+        run: |
+          set -euo pipefail
+          pid="$APP_PID"
+          osascript -e "tell application id \"$BUNDLE_ID\" to quit" || osascript -e "quit app \"$APP_NAME\"" || true
+          for _ in $(seq 1 15); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+          done
+          if kill -0 "$pid" 2>/dev/null; then
+            echo "::warning::the app did not quit on request, kill $pid"
+            kill "$pid" || true
+            sleep 3
+            if kill -0 "$pid" 2>/dev/null; then echo "::error::the app is still running"; exit 1; fi
+          fi
+          echo "the app is gone"
+
+          sleep 5
+          reports="$(find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 2 -type f -mmin -30 \
+            \( -iname "$APP_NAME*" -o -iname "sandpiper*" \) 2>/dev/null || true)"
+          if [[ -n "$reports" ]]; then
+            mkdir -p smoke-out/crash
+            while IFS= read -r r; do
+              echo "::error::crash report: $r"
+              head -n 120 "$r"
+              cp "$r" smoke-out/crash/ || true
+            done <<< "$reports"
+            exit 1
+          fi
+          echo "no crash reports"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### macOS smoke test (release run ${{ inputs.run_id }})"
+            echo ""
+            echo "- Version: ${APP_VERSION:-unknown}"
+            echo "- Architectures: ${APP_ARCHS:-unknown}"
+            echo "- Bundle id: ${APP_BUNDLE_ID:-unknown}"
+            echo "- Process alive: ${ALIVE_SECONDS:-0} s of $WAIT_SECONDS"
+            echo "- Job status so far: ${{ job.status }} (the crash-report check is the step before this one)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: macos-smoke
+          path: smoke-out
+          retention-days: 3
+          if-no-files-found: ignore
