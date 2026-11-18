@@ -34,11 +34,10 @@ import 'package:logging/logging.dart' as logging;
 import 'package:rxdart/rxdart.dart';
 
 class HiddifyCoreService with InfraLogger {
-  HiddifyCoreService(this.ref);
+  HiddifyCoreService(this.ref, {CoreInterface? core}) : core = core ?? getCoreInterface();
   final Ref ref;
 
-  // CoreHiddifyCoreService() {}
-  final core = getCoreInterface();
+  final CoreInterface core;
 
   CoreStatus currentState = const CoreStatus.stopped();
   final statusController = BehaviorSubject<CoreStatus>();
@@ -107,6 +106,9 @@ class HiddifyCoreService with InfraLogger {
     return TaskEither(() async {
       // the status listener in place stops counting before its channel is replaced
       _statusListener++;
+      // the app is back: the listeners of the foreground take over from the one kept while away
+      _away = false;
+      await stopListenSingle(awayLogListenerKey);
       try {
         final directories = ref.read(appDirectoriesProvider).requireValue;
         // M-02: only a debug build. The log level must not switch the core's debug mode: in the core
@@ -806,7 +808,43 @@ class HiddifyCoreService with InfraLogger {
     _coreInfoSubscription = null;
   }
 
+  /// The key of the one log listener kept while the app is paused (E12-02).
+  static const awayLogListenerKey = "awayLogListener";
+
+  /// The level of that listener: what the log file takes, whatever level the user chose.
+  static const awayLogLevel = LogLevel.WARNING;
+
+  /// The app is paused: the foreground channel is closed.
+  var _away = false;
+
+  /// While the app is paused its core goes on (the VPN), and the core's warnings are what the log file
+  /// keeps for a run nobody watched: one listener, at [awayLogLevel], stays on the channel that is not
+  /// closed. Only when the two channels reach one core (Android), as the foreground's is the one that
+  /// closes; the foreground listeners come back when the app does (setup).
+  Future<void> _keepWarningsWhileAway() async {
+    await listenSingle<LogMessage>(
+      awayLogListenerKey,
+      () => _logStream(core.bgClient, awayLogLevel),
+    );
+  }
+
+  Stream<LogMessage> _logStream(CoreClient cc, LogLevel level) {
+    return cc.logListener(LogRequest(level: level), options: grpcOptions).cancelOnUnsubscribe.map((event) {
+      // One message becomes one record. The old code split on newlines
+      // first, but the engine already sends one line per message, so the
+      // split only allocated a list and multiplied the work per burst.
+      final line = softenHandledBind(level: getLogLevel(event.level), message: event.message, handled: handledLocalBind);
+      coreLogFor(event.type).log(line.level, line.message);
+      return event;
+    });
+  }
+
   Future<void> startListeningLogs(String key, CoreClient cc) async {
+    if (_away && core.coreSharesProcess) {
+      // the core may have been started again while the app is away: its stream is a new one
+      await _keepWarningsWhileAway();
+      return;
+    }
     final logLevel = ref.read(ConfigOptions.logLevel);
     final coreLogLevel = getCoreLogLevel(logLevel);
     final listenKey = "${key}LogListener";
@@ -817,21 +855,7 @@ class HiddifyCoreService with InfraLogger {
       await stopListenSingle(listenKey);
       return;
     }
-    await listenSingle<LogMessage>(listenKey, () {
-      return cc.logListener(LogRequest(level: coreLogLevel), options: grpcOptions).cancelOnUnsubscribe.map((event) {
-        // Handle incoming event
-        // One message becomes one record. The old code split on newlines
-        // first, but the engine already sends one line per message, so the
-        // split only allocated a list and multiplied the work per burst.
-        final line = softenHandledBind(
-          level: getLogLevel(event.level),
-          message: event.message,
-          handled: handledLocalBind,
-        );
-        coreLogFor(event.type).log(line.level, line.message);
-        return event;
-      });
-    });
+    await listenSingle<LogMessage>(listenKey, () => _logStream(cc, coreLogLevel));
   }
 
   Future<void> stopListenSingle(String key) async {
@@ -923,6 +947,8 @@ class HiddifyCoreService with InfraLogger {
     if (!core.isSingleChannel()) {
       await stopListenSingle("fg");
       await stopListenSingle("bg");
+      _away = true;
+      if (core.coreSharesProcess) await _keepWarningsWhileAway();
       // Only one of the two modes matches how the channel was opened, so the
       // other one always throws. Both are attempted and the failure is logged.
       try {
