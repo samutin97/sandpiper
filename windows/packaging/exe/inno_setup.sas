@@ -117,6 +117,10 @@ Filename: "{app}\{{EXECUTABLE_NAME}}"; Description: "{cm:LaunchProgram,{{DISPLAY
 ; The app's data: %APPDATA%\<CompanyName>\<ProductName> of windows\runner\Runner.rc (path_provider).
 ; Never {userappdata}\Hiddify, which is upstream Hiddify's, installed beside it on the same PC.
 Type: filesandordirs; Name: "{userappdata}\Sandpiper"
+; D7-03: the folder of this app's service (ProgramData\Sandpiper\AdminBgService: its control secret,
+; build stamp and core), after the service is removed (CurUninstallStepChanged). Upstream's is
+; ProgramData\Hiddify, never touched here.
+Type: filesandordirs; Name: "{commonappdata}\Sandpiper"
 
 [Code]
 // Stop/remove services via the Service Control Manager API.
@@ -215,10 +219,27 @@ begin
   Result := '';
 end;
 
-// B-02: the uninstaller removes this app's service. Left behind, it was a SYSTEM service started
-// at every boot from a folder that no longer exists (and could be made again).
+// D7-03: the handler of sandpiper:// links the app registers for its user (HKCU), when it opens this
+// app's executable: left behind, it pointed at a deleted file. A handler another program registered
+// under that scheme is left as it is.
+procedure RemoveLinkHandler();
+var
+  Command: string;
+begin
+  if RegQueryStringValue(HKCU, 'Software\Classes\sandpiper\shell\open\command', '', Command) and
+     (Pos(Lowercase(AddBackslash(ExpandConstant('{app}'))), Lowercase(Command)) > 0) then
+    RegDeleteKeyIncludingSubkeys(HKCU, 'Software\Classes\sandpiper');
+end;
+
+// B-02: the uninstaller removes this app's service (stopped, up to 10 s, then deleted) before the
+// files go. Left behind, it was a SYSTEM service started at every boot from a folder that no longer
+// exists (and could be made again).
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
-  if (CurUninstallStep = usUninstall) and ServiceRunsFromApp(ADMIN_SERVICE) then
-    StopServiceByName(ADMIN_SERVICE, True);
+  if CurUninstallStep = usUninstall then
+  begin
+    if ServiceRunsFromApp(ADMIN_SERVICE) then
+      StopServiceByName(ADMIN_SERVICE, True);
+    RemoveLinkHandler();
+  end;
 end;
