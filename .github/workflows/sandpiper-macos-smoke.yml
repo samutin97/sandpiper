@@ -20,8 +20,8 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 15
     env:
-      APP_NAME: Hiddify              # PRODUCT_NAME (macos/Runner/Configs/AppInfo.xcconfig)
-      BUNDLE_ID: apple.hiddify.com   # macos/Runner/Configs/NetworkExtension.xcconfig
+      APP_NAME: Sandpiper            # PRODUCT_NAME (macos/Runner/Configs/AppInfo.xcconfig)
+      BUNDLE_ID: app.sandpiperbird.macos  # macos/Runner/Configs/NetworkExtension.xcconfig
       CORE_LIB: hiddify-core.dylib   # macos/Runner.xcodeproj: copied to Contents/Frameworks
       WAIT_SECONDS: "40"
     steps:

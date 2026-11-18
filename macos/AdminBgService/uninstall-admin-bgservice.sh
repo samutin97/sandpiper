@@ -11,13 +11,17 @@ if [[ "$(id -u)" != 0 ]]; then
   echo 'error: run this script with sudo.' >&2
   exit 1
 fi
-if [[ -x "$task_destination/Contents/MacOS/Hiddify" ]]; then
-  "$task_destination/Contents/MacOS/Hiddify" --tunnel uninstall || true
-elif [[ -x "$task_legacy/Contents/MacOS/Hiddify" ]]; then
-  "$task_legacy/Contents/MacOS/Hiddify" --tunnel uninstall || true
-fi
+# the copy's executable: Sandpiper, or Hiddify of a build before the app was renamed
+for task_existing in "$task_destination" "$task_legacy"; do
+  for task_name in Sandpiper Hiddify; do
+    if [[ -x "$task_existing/Contents/MacOS/$task_name" ]]; then
+      "$task_existing/Contents/MacOS/$task_name" --tunnel uninstall || true
+      break 2
+    fi
+  done
+done
 # Drop both the current and pre-rename install trees.
 rm -rf "/Library/Application Support/Hiddify/AdminBgService" \
   "/Library/Application Support/Hiddify/TunnelService"
 rmdir "/Library/Application Support/Hiddify" 2>/dev/null || true
-echo 'Hiddify VPN service removed.'
+echo 'Sandpiper VPN service removed.'

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>NSSystemExtensionUsageDescription</key>
-	<string>Hiddify uses a network extension to provide VPN connectivity.</string>
+	<string>Sandpiper uses a network extension to provide VPN connectivity.</string>
 	<key>NetworkExtension</key>
 	<dict>
 		<key>NEMachServiceName</key>

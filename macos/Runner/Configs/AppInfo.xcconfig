@@ -4,8 +4,9 @@
 // future. If not, the values below would default to using the project name when this becomes a
 // 'flutter create' template.
 
-// The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = Hiddify
+// The application's name (Sandpiper.app, the app menu, the window's title). By default this is also
+// the title of the Flutter window. Not Hiddify: the official app installs as Hiddify.app.
+PRODUCT_NAME = Sandpiper
 
 // The application's bundle identifier
 PRODUCT_BUNDLE_IDENTIFIER = $(HIDDIFY_APP_BUNDLE_IDENTIFIER)

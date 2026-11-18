@@ -9,10 +9,12 @@ HIDDIFY_EXTENSION_CODE_SIGN_ALLOWED[config=Debug] = NO
 // which carries it as an app extension instead.
 HIDDIFY_TUNNEL_KIND = system-extension
 HIDDIFY_APPEX_CODE_SIGN_ALLOWED = NO
-// The same identifiers as the iOS app, in the same Apple team
-HIDDIFY_TUNNEL_BUNDLE_IDENTIFIER = apple.hiddify.com.HiddifyPacketTunnel
-HIDDIFY_APP_BUNDLE_IDENTIFIER = apple.hiddify.com
-HIDDIFY_VPN_APP_GROUP = $(TeamIdentifierPrefix)apple.hiddify.com.vpn
+// The fork's own identifiers (as its Android package, app.sandpiperbird.android): with the
+// official app's, Sandpiper replaced it and took its data (~/Library/Application Support/<id>).
+// The system extension's identifier is prefixed by the app's, as macOS requires.
+HIDDIFY_TUNNEL_BUNDLE_IDENTIFIER = app.sandpiperbird.macos.PacketTunnel
+HIDDIFY_APP_BUNDLE_IDENTIFIER = app.sandpiperbird.macos
+HIDDIFY_VPN_APP_GROUP = $(TeamIdentifierPrefix)app.sandpiperbird.macos.vpn
 // Apple Development profiles use the standard value; Developer ID uses the suffix.
 HIDDIFY_NETWORK_EXTENSION_ENTITLEMENT = packet-tunnel-provider-systemextension
 HIDDIFY_NETWORK_EXTENSION_ENTITLEMENT[config=Debug] = packet-tunnel-provider

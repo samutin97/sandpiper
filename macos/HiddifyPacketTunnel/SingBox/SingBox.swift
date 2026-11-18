@@ -26,7 +26,7 @@ final class SingBox {
                   let settings = values["settingsJSON"] as? String,
                   let secret = values["secret"] as? String, secret.count >= 32,
                   let port = values["port"] as? NSNumber else {
-                throw tunnelError("The saved VPN configuration is incomplete. Connect from Hiddify first.")
+                throw tunnelError("The saved VPN configuration is incomplete. Connect from Sandpiper first.")
             }
             self.configContent = content
             self.configName = values["configName"] as? String ?? "Hiddify"

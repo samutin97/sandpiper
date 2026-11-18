@@ -22,7 +22,7 @@ final class SystemExtensionController:
     NSObject,
     OSSystemExtensionRequestDelegate {
     let extensionIdentifier = Bundle.main.object(forInfoDictionaryKey: "HiddifyTunnelBundleIdentifier") as? String
-        ?? "apple.hiddify.com.HiddifyPacketTunnel"
+        ?? "app.sandpiperbird.macos.PacketTunnel"
     private(set) var activationState: ExtensionActivationState = .idle
     var onStateChanged: (() -> Void)?
     private var completion: ((Error?) -> Void)?
@@ -42,7 +42,7 @@ final class SystemExtensionController:
         onStateChanged?()
         let callback = completion
         completion = nil
-        callback?(vpnError("Allow the Hiddify VPN extension in System Settings, then return to Hiddify and connect again.", code: .approvalRequired))
+        callback?(vpnError("Allow the Sandpiper VPN extension in System Settings, then return to Sandpiper and connect again.", code: .approvalRequired))
     }
 
     func request(
@@ -60,7 +60,7 @@ final class SystemExtensionController:
             case .completed:
                 finish(.activated, error: nil)
             case .willCompleteAfterReboot:
-                finish(.requiresReboot, error: vpnError("Restart your Mac to finish installing the Hiddify VPN extension."))
+                finish(.requiresReboot, error: vpnError("Restart your Mac to finish installing the Sandpiper VPN extension."))
             @unknown default:
                 finish(.failed("Unknown activation result"), error: vpnError("macOS returned an unknown extension activation result."))
         }
@@ -77,11 +77,11 @@ final class SystemExtensionController:
     func activate(completion: @escaping (Error?) -> Void) {
         if case .activated = activationState { completion(nil); return }
         if case .activating = activationState {
-            completion(vpnError("macOS is still installing the Hiddify system extension. Try connecting again when it finishes."))
+            completion(vpnError("macOS is still installing the Sandpiper system extension. Try connecting again when it finishes."))
             return
         }
         if case .waitingForApproval = activationState {
-            completion(vpnError("Allow the Hiddify VPN extension in System Settings, then return to Hiddify and connect again.", code: .approvalRequired))
+            completion(vpnError("Allow the Sandpiper VPN extension in System Settings, then return to Sandpiper and connect again.", code: .approvalRequired))
             return
         }
         guard self.completion == nil else {
@@ -430,7 +430,7 @@ final class MacOSVPNController: NSObject, FlutterStreamHandler {
         case .activating: result["activation"] = "activating"
         case .waitingForApproval:
             result["activation"] = "waitingForApproval"
-            result["message"] = "Allow the Hiddify VPN extension in System Settings, then return to Hiddify and connect again."
+            result["message"] = "Allow the Sandpiper VPN extension in System Settings, then return to Sandpiper and connect again."
         case .activated: result["activation"] = "activated"
         case .requiresReboot: result["activation"] = "requiresReboot"
         case .failed(let message): result["activation"] = "failed"; result["message"] = message

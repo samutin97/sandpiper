@@ -33,7 +33,7 @@ load_env() {
 
 task_version="$(grep '^version:' pubspec.yaml | sed -E 's/version: *//')"
 task_out="$task_root/dist/$task_version"
-task_app="build/macos/Build/Products/Release/Hiddify.app"
+task_app="build/macos/Build/Products/Release/Sandpiper.app"
 
 bash macos/scripts/build-admin-bgservice-core.sh
 case "$task_mode" in
@@ -70,7 +70,7 @@ case "$task_mode" in
     productbuild --component "$task_app" /Applications --sign "$task_identity" "$task_pkg"
     task_stage="$(mktemp -d)"
     trap 'rm -rf "$task_stage"' EXIT
-    ditto "$task_app" "$task_stage/Hiddify.app"
+    ditto "$task_app" "$task_stage/Sandpiper.app"
     ln -s /Applications "$task_stage/Applications"
     hdiutil create -volname Hiddify -srcfolder "$task_stage" -format UDZO -ov "$task_dmg" >/dev/null
     rm -rf "$task_stage"
@@ -95,7 +95,7 @@ task_pkg="$(ls "$task_out"/*macos.pkg)"
 task_dmg="${task_pkg%.pkg}.dmg"
 task_stage="$(mktemp -d)"
 trap 'rm -rf "$task_stage"' EXIT
-ditto "$task_app" "$task_stage/Hiddify.app"
+ditto "$task_app" "$task_stage/Sandpiper.app"
 ln -s /Applications "$task_stage/Applications"
 hdiutil create -volname Hiddify -srcfolder "$task_stage" -format UDZO -ov "$task_dmg" >/dev/null
 if [[ "$task_mode" == developer-id ]]; then

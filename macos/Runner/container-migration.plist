@@ -4,8 +4,8 @@
 <dict>
 	<key>Move</key>
 	<array>
-		<string>${ApplicationSupport}/apple.hiddify.com</string>
-		<string>${Library}/Preferences/apple.hiddify.com.plist</string>
+		<string>${ApplicationSupport}/app.sandpiperbird.macos</string>
+		<string>${Library}/Preferences/app.sandpiperbird.macos.plist</string>
 	</array>
 </dict>
 </plist>

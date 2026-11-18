@@ -27,7 +27,7 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 15
     env:
-      APP_NAME: Hiddify
+      APP_NAME: Sandpiper
       HELPER_REL: Contents/Helpers/Hiddify Core.app/Contents/MacOS/Hiddify
     steps:
       - uses: actions/download-artifact@v7

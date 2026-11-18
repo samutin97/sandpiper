@@ -1,4 +1,4 @@
-# the disk image's volume name; path below is the .app the build makes (PRODUCT_NAME, unchanged)
+# the disk image's volume name; path below is the .app the build makes (PRODUCT_NAME)
 title: Sandpiper
 background: "background.png"
 window:
@@ -13,4 +13,4 @@ contents:
   - x: 160
     y: 190
     type: file
-    path: Hiddify.app
+    path: Sandpiper.app

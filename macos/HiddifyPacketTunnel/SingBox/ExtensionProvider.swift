@@ -13,7 +13,7 @@ import os.log
 /// Engine state is confined to engineQueue, which supports the unchecked Sendable
 /// conformance. ExtensionPlatformInterface locks shared network snapshots and settings.
 class ExtensionProvider: NEPacketTunnelProvider, @unchecked Sendable {
-    private let logger = Logger(subsystem: "apple.hiddify.com.HiddifyPacketTunnel", category: "PacketTunnel")
+    private let logger = Logger(subsystem: "app.sandpiperbird.macos.PacketTunnel", category: "PacketTunnel")
     // Go can synchronously wait for Apple's network settings callback. Keep its
     // lifecycle calls serialized on a worker queue so that callback can progress.
     private let engineQueue = DispatchQueue(label: "app.hiddify.packet-tunnel.engine")
@@ -26,7 +26,7 @@ class ExtensionProvider: NEPacketTunnelProvider, @unchecked Sendable {
         // On-demand connections must also work when the app is closed, so use
         // the saved VPN configuration rather than transient start options.
         guard let savedConfiguration = (protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration else {
-            throw tunnelError("The saved VPN configuration is incomplete. Connect from Hiddify first.")
+            throw tunnelError("The saved VPN configuration is incomplete. Connect from Sandpiper first.")
         }
         let configuration = try SingBox.Configuration(savedConfiguration)
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
