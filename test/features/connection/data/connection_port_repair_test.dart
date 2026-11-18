@@ -49,6 +49,19 @@ class _FakeCore implements HiddifyCoreService {
 
   /// When set, a start that returns its failure does so only once it completes.
   Completer<void>? holdResult;
+
+  /// A start (by its number, from 1) that returns only once its completer does, as the core service's
+  /// start does on the desktop: it waits for the outcome on the status stream.
+  final holdOutcome = <int, Completer<void>>{};
+
+  /// Statuses a start publishes right after STARTING, before it returns.
+  final afterStarting = <CoreStatus>[];
+
+  /// Published by a start before it returns its failure (Android: the platform's stop).
+  CoreStatus? beforeFailure;
+
+  @override
+  bool Function(String message)? handledLocalBind;
   late SingboxConfigOption _options;
 
   @override
@@ -69,11 +82,15 @@ class _FakeCore implements HiddifyCoreService {
   @override
   TaskEither<ConnectionFailure, Unit> start(String path, String name, bool disableMemoryLimit) => TaskEither(() async {
     startedPorts.add(_options.mixedPort);
+    final number = startedPorts.length;
     statuses.add(const CoreStatus.starting());
-    if (failInResult[startedPorts.length] case final failure?) {
+    afterStarting.forEach(statuses.add);
+    if (failInResult[number] case final failure?) {
+      if (beforeFailure case final status?) statuses.add(status);
       await holdResult?.future;
       return left(failure);
     }
+    await holdOutcome[number]?.future;
     return right(unit);
   });
 
@@ -228,6 +245,102 @@ void main() {
     expect(result.isRight(), isTrue, reason: '$result');
     expect(core.startedPorts, hasLength(2));
     expect(shown.where(failed), isEmpty, reason: '$shown');
+  });
+
+  // D11-01: the status showed "tap to connect" for a moment between the two attempts.
+  // The desktop's order: the core reports the failure, STOPPING, and then a plain STOPPED whose message
+  // is empty (not null: it comes off the wire), before the second start reports anything.
+  test('no disconnected status between the attempts: the failed core stops with an empty message', () async {
+    core.holdOutcome[2] = Completer<void>();
+    await connected();
+    core.statuses.add(CoreStatus.stopped(alert: CoreAlert.startService, message: refused(50100)));
+    await settle();
+    core.statuses.add(const CoreStatus.stopping());
+    core.statuses.add(const CoreStatus.stopped(message: ''));
+    await settle();
+    core.statuses.add(CoreStatus.stopped(alert: CoreAlert.startService, message: refused(50100)));
+    await settle();
+    expect(core.startedPorts, hasLength(2));
+    expect(shown.whereType<Disconnected>(), isEmpty, reason: '$shown');
+    core.holdOutcome[2]!.complete();
+    core.statuses.add(const CoreStatus.started());
+    await settle();
+    expect(shown.last, const Connected());
+    expect(shown.whereType<Disconnected>(), isEmpty, reason: '$shown');
+  });
+
+  // Android: the start returns its failure, and the platform's stop comes before the core's report.
+  test('no disconnected status when the platform stops before the failure is reported', () async {
+    core.failInResult[1] = ConnectionFailure.unexpected("startService - ${refused(50100)}");
+    core.beforeFailure = const CoreStatus.stopped();
+    core.holdResult = Completer<void>();
+    final connecting = repo.connect(profile, false).run();
+    while (core.startedPorts.isEmpty) {
+      await settle();
+    }
+    await settle();
+    core.statuses.add(CoreStatus.stopped(alert: CoreAlert.startService, message: refused(50100)));
+    await settle();
+    core.holdResult!.complete();
+    await settle();
+    core.statuses.add(const CoreStatus.stopping());
+    core.statuses.add(CoreStatus.stopped(alert: CoreAlert.startService, message: refused(50100)));
+    final result = await connecting;
+    expect(result.isRight(), isTrue, reason: '$result');
+    expect(shown.whereType<Disconnected>(), isEmpty, reason: '$shown');
+  });
+
+  // The good port: the core answers a new status listener with the state it is in (stopped) right
+  // after the app said STARTING.
+  test('no disconnected status when a stale stop arrives while the connect runs', () async {
+    core.afterStarting.add(const CoreStatus.stopped(message: ''));
+    core.holdOutcome[1] = Completer<void>();
+    final connecting = repo.connect(profile, false).run();
+    await settle();
+    core.statuses.add(const CoreStatus.started());
+    core.holdOutcome[1]!.complete();
+    expect((await connecting).isRight(), isTrue);
+    await settle();
+    expect(shown.whereType<Disconnected>(), isEmpty, reason: '$shown');
+    expect(shown.last, const Connected());
+  });
+
+  test('a stop that ends the connect is shown once the connect is over', () async {
+    core.afterStarting.add(const CoreStatus.stopped(message: ''));
+    await connected();
+    await settle();
+    expect(shown.last, isA<Disconnected>());
+  });
+
+  test('a disconnect while the second attempt runs cancels it: disconnected, no error, no third start', () async {
+    core.holdOutcome[2] = Completer<void>();
+    await connected();
+    await coreFails(refused(50100));
+    expect(core.startedPorts, hasLength(2));
+    await repo.disconnect().run();
+    core.statuses.add(const CoreStatus.stopping());
+    // the failed core's report, late
+    core.statuses.add(CoreStatus.stopped(alert: CoreAlert.startService, message: refused(50100)));
+    core.statuses.add(const CoreStatus.stopped(message: ''));
+    core.holdOutcome[2]!.complete();
+    await settle();
+    expect(core.startedPorts, hasLength(2));
+    expect(shown.where(failed), isEmpty, reason: '$shown');
+    expect(shown.last, const Disconnected());
+  });
+
+  // D11-01 / A: the core's own line about the failed bind is handled while the repair is armed.
+  test('the failed bind of the armed connect is a handled line, and no other is', () async {
+    expect(core.handledLocalBind, isNotNull);
+    expect(core.handledLocalBind!(refused(50100)), isFalse, reason: 'no connect yet');
+    await connected();
+    expect(core.handledLocalBind!(refused(50100)), isTrue);
+    expect(core.handledLocalBind!(refused(50101)), isFalse);
+    expect(core.handledLocalBind!("start inbound/tun[tun-in]: configure tun interface: Access is denied."), isFalse);
+    await coreFails(refused(50100));
+    expect(core.handledLocalBind!(refused(50100)), isTrue, reason: 'the line comes after the status too');
+    final next = core.startedPorts.last;
+    expect(core.handledLocalBind!(refused(next)), isFalse, reason: 'the new port failing is not handled');
   });
 
   test('a disconnect before the retry ends the repair', () async {

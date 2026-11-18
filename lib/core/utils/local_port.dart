@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'dart:math';
 
+import 'package:logging/logging.dart';
+
 /// The ports the app picks at random for the core's loopback listeners (the local proxy, the Clash
 /// API) come from [localPortMin, localPortMin + localPortSpan), and each is checked by binding it on
 /// 127.0.0.1 when it is picked (D9-01): Windows reserves ranges of ports (Hyper-V, WSL; `netsh int
@@ -46,4 +48,16 @@ Future<int> pickLocalPort({Set<int> avoid = const {}, Random? random, LocalPortP
 int? failedLocalBind(String message) {
   final match = RegExp(r'listen (?:tcp|udp)[46]? \S*:(\d+): bind: ').firstMatch(message);
   return match == null ? null : int.tryParse(match.group(1)!);
+}
+
+/// The core logs its failure to open a local port at the fatal level, and writes it before or after the
+/// status that carries it. When the app replaces the port ([handled] says so of the line), the line is
+/// a warning, marked as handled; any other line (and any level below error) stays as it is.
+({Level level, String message}) softenHandledBind({
+  required Level level,
+  required String message,
+  required bool Function(String message)? handled,
+}) {
+  if (level < Level.SEVERE || handled == null || !handled(message)) return (level: level, message: message);
+  return (level: Level.WARNING, message: '$message (handled: the local port is replaced)');
 }

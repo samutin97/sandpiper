@@ -52,7 +52,10 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
     required this.singbox,
     required this.configOptionRepository,
     required this.profilePathResolver,
-  });
+  }) {
+    // the core's own line about the failed bind is not a fatal one while the repair deals with it
+    singbox.handledLocalBind = _handledLocalBind;
+  }
 
   final Ref ref;
 
@@ -87,11 +90,12 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
 
   @override
   Stream<ConnectionStatus> watchConnectionStatus() {
-    final core = singbox.watchStatus().map(
+    final core = singbox.watchStatus().where((event) => !_heldBack(event)).map(
       (event) => _hiddenForPortRepair(event)
           ? const Connecting()
           : switch (event) {
-              CoreStopped() => Disconnected(event.getCoreAlert()),
+              // the user stopped the connect: a failure of it that is still on its way is not theirs to see
+              CoreStopped() => Disconnected(_cancelled ? null : event.getCoreAlert()),
               CoreStarting() => const Connecting(),
               CoreWaiting() => const Waiting(),
               CoreNoAvailableProxies() => const NoAvailableProxies(),
@@ -115,17 +119,22 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
   TaskEither<ConnectionFailure, Unit> connect(ProfileEntity activeProfile, bool disableMemoryLimit) => setup().flatMap(
     (_) => TaskEither(() async {
       final generation = _armPortRepair(activeProfile, disableMemoryLimit);
-      while (true) {
-        _vpnChoiceShown = false;
-        _adminRefused = false;
-        var result = await _connectOnce(activeProfile, disableMemoryLimit).run();
-        // a start that reports its failure as its result too (Android: the core started in the
-        // background) waits for the repair, and its outcome is the retry's
-        if (result case Left(value: final failure) when generation == _connectGeneration) {
-          if (_startPortRepair("$failure") case final retry?) result = await retry;
+      Either<ConnectionFailure, Unit>? outcome;
+      try {
+        while (true) {
+          _vpnChoiceShown = false;
+          _adminRefused = false;
+          var result = await _connectOnce(activeProfile, disableMemoryLimit).run();
+          // a start that reports its failure as its result too (Android: the core started in the
+          // background) waits for the repair, and its outcome is the retry's
+          if (result case Left(value: final failure) when generation == _connectGeneration) {
+            if (_startPortRepair("$failure") case final retry?) result = await retry;
+          }
+          if (result.isRight() || !_vpnChoiceShown || !_adminRefused) return outcome = result;
+          loggy.info("administrator permission was not given, offering the choice again");
         }
-        if (result.isRight() || !_vpnChoiceShown || !_adminRefused) return result;
-        loggy.info("administrator permission was not given, offering the choice again");
+      } finally {
+        await _settleConnect(generation, outcome);
       }
     }),
   );
@@ -141,6 +150,51 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
 
   /// Counts the connects and disconnects: a repair belongs to the connect that armed it.
   var _connectGeneration = 0;
+
+  // D11-01: what the user sees while a connect runs is "connecting", until its outcome. A plain stop
+  // in that time is not the outcome: the core service stops a core that failed to start (the first
+  // attempt of a repair), the platform reports its stop before the core's failure, and a status
+  // listener set up again is answered with the state the core was in before the start.
+
+  /// Set from the start of a connect until it returned (and the events it published were handled).
+  var _connecting = false;
+
+  /// A plain stop was held back while the connect ran, and nothing has come after it.
+  var _stopHeldBack = false;
+
+  /// The user disconnected a connect that had not ended: its failure, if it still comes, is not shown.
+  var _cancelled = false;
+
+  /// A stop without a failure: what a core says when it was stopped, as opposed to when it failed. The
+  /// message of the one that comes off the wire is empty, not null.
+  static bool _isPlainStop(CoreStatus event) =>
+      event is CoreStopped && event.alert == null && (event.message ?? "").isEmpty;
+
+  /// Whether [event] is a plain stop of a connect that runs (and has no repair under way: that one
+  /// reads such stops as connecting itself); it is then not published.
+  bool _heldBack(CoreStatus event) {
+    if (!_isPlainStop(event)) {
+      _stopHeldBack = false;
+      return false;
+    }
+    if (!_connecting || _replacedPort != null) return false;
+    _stopHeldBack = true;
+    return true;
+  }
+
+  /// The connect [generation] returned with [outcome]: a stop that was held back and was the last
+  /// word is its outcome after all (the core stopped, with nothing to say about it).
+  Future<void> _settleConnect(int generation, Either<ConnectionFailure, Unit>? outcome) async {
+    // the events the start published just before it returned are still on their way
+    await Future<void>.delayed(Duration.zero);
+    if (generation != _connectGeneration || _portRepairing) return;
+    _connecting = false;
+    if (_stopHeldBack) {
+      _stopHeldBack = false;
+      // a failure is shown by whoever got it
+      if (outcome != null && outcome.isRight()) _portRetryOutcome.add(const Disconnected());
+    }
+  }
 
   /// The connect armed may still repair a port: until its core starts, fails otherwise, or one
   /// repair began.
@@ -169,6 +223,9 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
   int _armPortRepair(ProfileEntity profile, bool disableMemoryLimit) {
     _endPortRepair();
     _portRepairArmed = true;
+    _connecting = true;
+    _stopHeldBack = false;
+    _cancelled = false;
     _portRepairConnect = (profile: profile, disableMemoryLimit: disableMemoryLimit);
     return _connectGeneration;
   }
@@ -182,6 +239,8 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
     _replacedPort = null;
     _replacedPortReports = 0;
     _portRepairing = false;
+    _connecting = false;
+    _stopHeldBack = false;
     _failedCoreStopped?.completeOnce();
     _failedCoreStopped = null;
   }
@@ -199,7 +258,7 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
         switch (event) {
           case CoreStopping():
             return true;
-          case CoreStopped(alert: null, message: null):
+          case CoreStopped() when _isPlainStop(event):
             _failedCoreStopped?.completeOnce();
             return true;
           default:
@@ -252,15 +311,22 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
     // a disconnect, or another connect, came meanwhile
     if (generation != _connectGeneration) return right(unit);
     await _portRepair.replace(key);
+    // the user disconnected while the port was being replaced
+    if (generation != _connectGeneration) return right(unit);
     final Either<ConnectionFailure, Unit> result;
     try {
-      result = await _connectOnce(connect.profile, connect.disableMemoryLimit).run();
+      result = await _connectOnce(
+        connect.profile,
+        connect.disableMemoryLimit,
+        cancelled: () => generation != _connectGeneration,
+      ).run();
     } finally {
       if (generation == _connectGeneration) _portRepairing = false;
     }
     if (generation == _connectGeneration) {
       if (result case Left(value: final failure)) _portRetryOutcome.add(Disconnected(failure));
     }
+    await _settleConnect(generation, result);
     return result;
   }
 
@@ -283,20 +349,32 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
     onRepaired: (key, from, to) => loggy.warning("the core could not open the local port $from ($key): using $to"),
   );
 
-  TaskEither<ConnectionFailure, Unit> _connectOnce(ProfileEntity activeProfile, bool disableMemoryLimit) =>
-      applyConfigOption(activeProfile).flatMap(
-        (_) =>
-            TaskEither.tryCatch(() async {
-              await _prepareAdminBgService(activeProfile);
-              return unit;
-            }, (err, st) => err is ConnectionFailure ? err : ConnectionFailure.unexpected(err, st)).flatMap(
-              (_) => singbox.start(
-                profilePathResolver.file(activeProfile.id).path,
-                activeProfile.name,
-                disableMemoryLimit,
-              ),
-            ),
-      );
+  /// One start; [cancelled] is asked right before it, and the start is then not made.
+  TaskEither<ConnectionFailure, Unit> _connectOnce(
+    ProfileEntity activeProfile,
+    bool disableMemoryLimit, {
+    bool Function()? cancelled,
+  }) => applyConfigOption(activeProfile).flatMap(
+    (_) =>
+        TaskEither.tryCatch(() async {
+          await _prepareAdminBgService(activeProfile);
+          return unit;
+        }, (err, st) => err is ConnectionFailure ? err : ConnectionFailure.unexpected(err, st)).flatMap(
+          (_) => cancelled?.call() ?? false
+              ? TaskEither<ConnectionFailure, Unit>.of(unit)
+              : singbox.start(profilePathResolver.file(activeProfile.id).path, activeProfile.name, disableMemoryLimit),
+        ),
+  );
+
+  /// Whether the core's own [message] reports a failure to open the local port that the repair of the
+  /// connect deals with: the armed connect's port, or the one given up. The line is then logged as a
+  /// warning, as the failure is handled (the log read it as fatal, though the app went on).
+  bool _handledLocalBind(String message) {
+    final port = failedLocalBind(message);
+    if (port == null) return false;
+    if (_replacedPort == port) return true;
+    return _portRepairArmed && _portRepair.failedKey(message) != null;
+  }
 
   /// Modes A/B/C: ask fg core (Win/Linux) or native tunnel-service status (macOS), show consent.
   Future<void> _prepareAdminBgService(ProfileEntity profile) async {
@@ -474,8 +552,11 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
 
   @override
   TaskEither<ConnectionFailure, Unit> disconnect() {
+    // a connect that has not ended is cancelled, and its failure is not shown
+    final cancels = _connecting || _portRepairArmed || _portRepairing || _replacedPort != null;
     // no port repair outlives a disconnect
     _endPortRepair();
+    _cancelled = cancels;
     return singbox.stop().mapLeft(UnexpectedConnectionFailure.new);
   }
 

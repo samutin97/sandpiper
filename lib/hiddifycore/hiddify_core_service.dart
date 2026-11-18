@@ -11,6 +11,7 @@ import 'package:hiddify/core/directories/directories_provider.dart';
 import 'package:hiddify/core/localization/translations.dart';
 import 'package:hiddify/core/logger/core_logger.dart';
 import 'package:hiddify/core/notification/in_app_notification_controller.dart';
+import 'package:hiddify/core/utils/local_port.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/log/model/log_level.dart' as config_log_level;
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
@@ -43,6 +44,10 @@ class HiddifyCoreService with InfraLogger {
   final statusController = BehaviorSubject<CoreStatus>();
   final CallOptions? grpcOptions = null; //CallOptions(timeout: const Duration(milliseconds: 10000));
   final Map<String, StreamSubscription?> subscriptions = {};
+
+  /// Whether a line of the core is about a failure the app deals with itself (set by the connection
+  /// repository); the line is then logged as a warning.
+  bool Function(String message)? handledLocalBind;
   OutboundGroupList latest = OutboundGroupList();
 
   // Counts the stops the app sent, so a start knows when a stop came after it.
@@ -818,7 +823,12 @@ class HiddifyCoreService with InfraLogger {
         // One message becomes one record. The old code split on newlines
         // first, but the engine already sends one line per message, so the
         // split only allocated a list and multiplied the work per burst.
-        coreLogFor(event.type).log(getLogLevel(event.level), event.message);
+        final line = softenHandledBind(
+          level: getLogLevel(event.level),
+          message: event.message,
+          handled: handledLocalBind,
+        );
+        coreLogFor(event.type).log(line.level, line.message);
         return event;
       });
     });

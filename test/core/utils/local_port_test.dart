@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hiddify/core/utils/local_port.dart';
+import 'package:logging/logging.dart';
 
 void main() {
   group('pickLocalPort', () {
@@ -63,6 +64,24 @@ void main() {
       expect(failedLocalBind("start inbound/tun[tun-in]: configure tun interface: Access is denied."), isNull);
       expect(failedLocalBind("dial tcp 192.0.2.1:443: connect: connection refused"), isNull);
       expect(failedLocalBind(""), isNull);
+    });
+  });
+  group('softenHandledBind', () {
+    const line = "start inbound/mixed[mixed-in]: listen tcp 127.0.0.1:51803: bind: address already in use";
+
+    test('a fatal line the repair handles is a warning, marked as handled', () {
+      final softened = softenHandledBind(level: Level.SHOUT, message: line, handled: (_) => true);
+      expect(softened.level, Level.WARNING);
+      expect(softened.message, startsWith(line));
+      expect(softened.message, endsWith('(handled: the local port is replaced)'));
+      expect(softenHandledBind(level: Level.SEVERE, message: line, handled: (_) => true).level, Level.WARNING);
+    });
+
+    test('a line that is not handled, and any other level, stay as they are', () {
+      expect(softenHandledBind(level: Level.SHOUT, message: line, handled: (_) => false).level, Level.SHOUT);
+      expect(softenHandledBind(level: Level.SHOUT, message: line, handled: null).level, Level.SHOUT);
+      final info = softenHandledBind(level: Level.INFO, message: line, handled: (_) => true);
+      expect((info.level, info.message), (Level.INFO, line));
     });
   });
 }
