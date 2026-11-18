@@ -1,10 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/features/connection/data/local_port_repair.dart';
-
-const _refused =
-    "startFailed - start service: start inbound/mixed[mixed-in]: listen tcp 127.0.0.1:51803: bind: "
-    "An attempt was made to access a socket in a way forbidden by its access permissions.";
 
 void main() {
   late Map<String, int> ports;
@@ -28,45 +23,22 @@ void main() {
     );
   });
 
-  // D9-01: the saved local proxy port fell into a range Windows reserves, and every start failed
-  // on it. The start now gets a new port, saved, and runs once more.
-  test('a start that cannot open the local proxy port gets a new one and runs again', () async {
-    final starts = <int>[];
-    final result = await repair.run<String, Unit>(() async {
-      starts.add(ports["mixed-port"]!);
-      return starts.length == 1 ? left(_refused) : right(unit);
-    }, (failure) => failure);
-    expect(result.isRight(), isTrue);
-    expect(starts, [51803, 30001]);
-    expect(saved, ["mixed-port=30001"]);
-  });
-
-  test('runs again once only', () async {
-    var starts = 0;
-    final result = await repair.run<String, Unit>(() async {
-      starts++;
-      return left(_refused.replaceAll("51803", "${ports["mixed-port"]}"));
-    }, (failure) => failure);
-    expect(result.isLeft(), isTrue);
-    expect(starts, 2);
-    expect(saved, ["mixed-port=30001"]);
-  });
-
-  test('other failures, and ports the user set, are not repaired', () async {
-    for (final failure in [
-      "start inbound/tun[tun-in]: configure tun interface: Access is denied.",
-      "listen tcp 0.0.0.0:12338: bind: address already in use",
-    ]) {
-      var starts = 0;
-      final result = await repair.run<String, Unit>(() async {
-        starts++;
-        return left(failure);
-      }, (failure) => failure);
-      expect(result.getLeft().toNullable(), failure);
-      expect(starts, 1);
-    }
-    expect(saved, isEmpty);
-    expect(repair.failedKey(_refused), "mixed-port");
+  test('recognises a failure to open a port the app picked', () {
+    expect(
+      repair.failedKey(
+        "startService - start inbound: start inbound/mixed[mixed-in127.0.0.1]: listen tcp 127.0.0.1:51803: "
+        "bind: An attempt was made to access a socket in a way forbidden by its access permissions.",
+      ),
+      "mixed-port",
+    );
     expect(repair.failedKey("listen tcp 127.0.0.1:40001: bind: address already in use"), "clash-api-port");
+    // a port the user set, and other failures
+    expect(repair.failedKey("listen tcp 0.0.0.0:12338: bind: address already in use"), isNull);
+    expect(repair.failedKey("start inbound/tun[tun-in]: configure tun interface: Access is denied."), isNull);
+  });
+
+  test('replaces a port with a free one that keeps off the others, and saves it', () async {
+    expect(await repair.replace("mixed-port"), 30001);
+    expect(saved, ["mixed-port=30001"]);
   });
 }

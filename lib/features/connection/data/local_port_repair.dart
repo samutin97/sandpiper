@@ -1,12 +1,11 @@
-import 'package:fpdart/fpdart.dart';
 import 'package:hiddify/core/utils/local_port.dart';
 
 /// D9-01: the port of a loopback listener the app picked at random and saved (the local proxy, the
 /// Clash API) can stop being usable: Windows reserves ranges of ports and moves them at a reboot
 /// (a bind there is refused), and another program may take it. The core then fails to start, and
-/// every later start failed the same way, as the port stays saved. When a start fails to open one
-/// of those ports, a new free port is picked and saved for it, and the start runs once more; the
-/// user does not see the first failure.
+/// every later start failed the same way, as the port stays saved. [failedKey] recognises such a
+/// failure, and [replace] picks and saves a new free port for it; the connection repository then
+/// starts again once.
 class LocalPortRepair {
   LocalPortRepair({
     required this.ports,
@@ -36,18 +35,12 @@ class LocalPortRepair {
     return null;
   }
 
-  /// Runs [attempt]; when it fails because a repairable port could not be opened ([describe] gives
-  /// a failure's text), saves a new free port for it and runs [attempt] once more.
-  Future<Either<F, T>> run<F, T>(Future<Either<F, T>> Function() attempt, String Function(F failure) describe) async {
-    final first = await attempt();
-    final failure = first.getLeft().toNullable();
-    if (failure == null) return first;
-    final key = failedKey(describe(failure));
-    if (key == null) return first;
+  /// Picks a new free port for [key], keeping off every other local port, and saves it.
+  Future<int> replace(String key) async {
     final current = ports();
     final next = await pick(avoid: current.values.toSet());
     await save(key, next);
-    onRepaired?.call(key, current[key]!, next);
-    return attempt();
+    onRepaired?.call(key, current[key] ?? 0, next);
+    return next;
   }
 }

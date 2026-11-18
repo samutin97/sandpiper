@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -10,6 +11,7 @@ import 'package:hiddify/core/preferences/general_preferences.dart';
 import 'package:hiddify/core/router/dialog/dialog_notifier.dart';
 import 'package:hiddify/core/router/dialog/widgets/admin_bg_service_dialogs.dart';
 import 'package:hiddify/core/utils/exception_handler.dart';
+import 'package:hiddify/core/utils/local_port.dart';
 import 'package:hiddify/features/connection/data/local_port_repair.dart';
 import 'package:hiddify/features/connection/model/connection_failure.dart';
 import 'package:hiddify/features/connection/model/connection_status.dart';
@@ -28,6 +30,7 @@ import 'package:hiddify/singbox/model/singbox_config_option.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:meta/meta.dart';
+import 'package:rxdart/rxdart.dart';
 
 abstract interface class ConnectionRepository {
   SingboxConfigOption? get configOptionsSnapshot;
@@ -84,20 +87,20 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
 
   @override
   Stream<ConnectionStatus> watchConnectionStatus() {
-    return singbox.watchStatus().map(
-      (event) => switch (event) {
-        // a start that failed on a local port the connect picks again and retries is not a failure
-        CoreStopped(:final message) when _portRepairPending && _portRepair.failedKey(message ?? '') != null =>
-          const Connecting(),
-        CoreStopped() => Disconnected(event.getCoreAlert()),
-        CoreStarting() => const Connecting(),
-        CoreWaiting() => const Waiting(),
-        CoreNoAvailableProxies() => const NoAvailableProxies(),
-        CoreStarted() => const Connected(),
-        CoreStopping() => const Disconnecting(),
-        CoreHotReloading() => const HotReloading(),
-      },
+    final core = singbox.watchStatus().map(
+      (event) => _hiddenForPortRepair(event)
+          ? const Connecting()
+          : switch (event) {
+              CoreStopped() => Disconnected(event.getCoreAlert()),
+              CoreStarting() => const Connecting(),
+              CoreWaiting() => const Waiting(),
+              CoreNoAvailableProxies() => const NoAvailableProxies(),
+              CoreStarted() => const Connected(),
+              CoreStopping() => const Disconnecting(),
+              CoreHotReloading() => const HotReloading(),
+            },
     );
+    return Rx.merge([core, _portRetryOutcome.stream]);
   }
 
   /// Set while a connect runs: the VPN choice dialog was shown, and then the administrator prompt
@@ -111,18 +114,155 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
   @override
   TaskEither<ConnectionFailure, Unit> connect(ProfileEntity activeProfile, bool disableMemoryLimit) => setup().flatMap(
     (_) => TaskEither(() async {
+      final generation = _armPortRepair(activeProfile, disableMemoryLimit);
       while (true) {
         _vpnChoiceShown = false;
         _adminRefused = false;
-        final result = await _connectRepairingPort(activeProfile, disableMemoryLimit);
+        var result = await _connectOnce(activeProfile, disableMemoryLimit).run();
+        // a start that reports its failure as its result too (Android: the core started in the
+        // background) waits for the repair, and its outcome is the retry's
+        if (result case Left(value: final failure) when generation == _connectGeneration) {
+          if (_startPortRepair("$failure") case final retry?) result = await retry;
+        }
         if (result.isRight() || !_vpnChoiceShown || !_adminRefused) return result;
         loggy.info("administrator permission was not given, offering the choice again");
       }
     }),
   );
 
-  /// Set while the first start of a connect runs and a failed local port can still be repaired.
-  var _portRepairPending = false;
+  // D9-01. A connect the user or the autostart asks for may repair one local port: its start fails
+  // to open a port the app picked at random (Windows reserves ranges of ports and moves them at a
+  // reboot; another program may hold one). On the desktop and macOS the start returns once the core
+  // has the request, and the failure comes after, on the status stream: that is where it is
+  // recognised (on Android the start also returns it, and connect() waits for the repair). The
+  // failure, the stop of the failed core that the core service makes, and the report of the
+  // failure once more after that stop read as connecting; once the stop is over, a new port is
+  // saved and the start runs once more. If that one fails, its failure shows as usual.
+
+  /// Counts the connects and disconnects: a repair belongs to the connect that armed it.
+  var _connectGeneration = 0;
+
+  /// The connect armed may still repair a port: until its core starts, fails otherwise, or one
+  /// repair began.
+  var _portRepairArmed = false;
+  ({ProfileEntity profile, bool disableMemoryLimit})? _portRepairConnect;
+
+  /// The port given up: a report of its failure is old news until the next connect.
+  int? _replacedPort;
+
+  /// The reports of the given-up port's failure seen since the repair began.
+  var _replacedPortReports = 0;
+
+  /// Set from the start of a repair until its retry started: the failed core's stop reads as
+  /// connecting.
+  var _portRepairing = false;
+
+  /// Completes when the failed core's stop is over: a plain stop, or the failure reported once more.
+  Completer<void>? _failedCoreStopped;
+
+  /// The retry of the armed connect, once it began.
+  Future<Either<ConnectionFailure, Unit>>? _portRetry;
+
+  /// A retry that failed, for the status stream: on the desktop nobody waits for the retry.
+  final _portRetryOutcome = StreamController<ConnectionStatus>.broadcast();
+
+  int _armPortRepair(ProfileEntity profile, bool disableMemoryLimit) {
+    _endPortRepair();
+    _portRepairArmed = true;
+    _portRepairConnect = (profile: profile, disableMemoryLimit: disableMemoryLimit);
+    return _connectGeneration;
+  }
+
+  /// Ends what a connect armed (a disconnect, or another connect): a repair waiting for the failed
+  /// core's stop gives up at once.
+  void _endPortRepair() {
+    _connectGeneration++;
+    _portRepairArmed = false;
+    _portRetry = null;
+    _replacedPort = null;
+    _replacedPortReports = 0;
+    _portRepairing = false;
+    _failedCoreStopped?.completeOnce();
+    _failedCoreStopped = null;
+  }
+
+  /// Whether [event] belongs to a port repair (it then reads as connecting); it starts the repair
+  /// when it is the failure of the armed connect's start on a local port the app picked.
+  bool _hiddenForPortRepair(CoreStatus event) {
+    if (_replacedPort case final replaced?) {
+      if (event case CoreStopped(:final message) when failedLocalBind(message ?? "") == replaced) {
+        // reported once by the core, once more when the core service has stopped the failed core
+        if (++_replacedPortReports >= 2) _failedCoreStopped?.completeOnce();
+        return true;
+      }
+      if (_portRepairing) {
+        switch (event) {
+          case CoreStopping():
+            return true;
+          case CoreStopped(alert: null, message: null):
+            _failedCoreStopped?.completeOnce();
+            return true;
+          default:
+        }
+      }
+      return false;
+    }
+    if (!_portRepairArmed) return false;
+    switch (event) {
+      case CoreStopped(:final message, :final alert):
+        if (_startPortRepair(message ?? "", reported: true) != null) return true;
+        // the start failed otherwise: no repair for this connect
+        if (alert != null) _portRepairArmed = false;
+      case CoreStarted() || CoreWaiting() || CoreNoAvailableProxies():
+        _portRepairArmed = false;
+      default:
+    }
+    return false;
+  }
+
+  /// Starts the repair of the armed connect when [message] is a failure to open a local port the
+  /// app picked ([reported]: on the status stream), and returns its retry; the one already under
+  /// way, if any; null otherwise.
+  Future<Either<ConnectionFailure, Unit>>? _startPortRepair(String message, {bool reported = false}) {
+    if (_portRetry case final retry?) return retry;
+    if (!_portRepairArmed) return null;
+    final key = _portRepair.failedKey(message);
+    final connect = _portRepairConnect;
+    if (key == null || connect == null) return null;
+    _portRepairArmed = false;
+    _replacedPort = failedLocalBind(message);
+    _replacedPortReports = reported ? 1 : 0;
+    _portRepairing = true;
+    final stopped = _failedCoreStopped = Completer<void>();
+    return _portRetry = _repairPortAndConnect(key, connect, stopped.future, _connectGeneration);
+  }
+
+  /// How long a repair waits for the failed core's stop to be over before it starts again.
+  static const portRepairStopWait = Duration(seconds: 3);
+
+  Future<Either<ConnectionFailure, Unit>> _repairPortAndConnect(
+    String key,
+    ({ProfileEntity profile, bool disableMemoryLimit}) connect,
+    Future<void> failedCoreStopped,
+    int generation,
+  ) async {
+    // the core service stops the failed core when the core reports the failure: a start before that
+    // stop is over would race it
+    await failedCoreStopped.timeout(portRepairStopWait, onTimeout: () {});
+    // a disconnect, or another connect, came meanwhile
+    if (generation != _connectGeneration) return right(unit);
+    await _portRepair.replace(key);
+    final Either<ConnectionFailure, Unit> result;
+    try {
+      result = await _connectOnce(connect.profile, connect.disableMemoryLimit).run();
+    } finally {
+      if (generation == _connectGeneration) _portRepairing = false;
+    }
+    if (generation == _connectGeneration) {
+      if (result case Left(value: final failure)) _portRetryOutcome.add(Disconnected(failure));
+    }
+    return result;
+  }
 
   /// D9-01: the local ports the app picked at random (the local proxy, the Clash API) and may pick
   /// again when the core cannot open them; the others the user set keep theirs.
@@ -142,24 +282,6 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
     },
     onRepaired: (key, from, to) => loggy.warning("the core could not open the local port $from ($key): using $to"),
   );
-
-  /// A connect whose start, when it fails to open a local port the app picked, gets a new port and
-  /// runs once more (D9-01).
-  Future<Either<ConnectionFailure, Unit>> _connectRepairingPort(
-    ProfileEntity activeProfile,
-    bool disableMemoryLimit,
-  ) async {
-    var attempts = 0;
-    _portRepairPending = true;
-    try {
-      return await _portRepair.run(() {
-        if (attempts++ > 0) _portRepairPending = false;
-        return _connectOnce(activeProfile, disableMemoryLimit).run();
-      }, (failure) => "$failure");
-    } finally {
-      _portRepairPending = false;
-    }
-  }
 
   TaskEither<ConnectionFailure, Unit> _connectOnce(ProfileEntity activeProfile, bool disableMemoryLimit) =>
       applyConfigOption(activeProfile).flatMap(
@@ -351,7 +473,11 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
   }
 
   @override
-  TaskEither<ConnectionFailure, Unit> disconnect() => singbox.stop().mapLeft(UnexpectedConnectionFailure.new);
+  TaskEither<ConnectionFailure, Unit> disconnect() {
+    // no port repair outlives a disconnect
+    _endPortRepair();
+    return singbox.stop().mapLeft(UnexpectedConnectionFailure.new);
+  }
 
   static String _serviceMode(SingboxConfigOption options) =>
       options.routerMode ? 'router' : (options.enableTun ? 'vpn' : (options.setSystemProxy ? 'system-proxy' : 'proxy'));
@@ -422,4 +548,10 @@ class ConnectionRepositoryImpl with ExceptionHandler, InfraLogger implements Con
               return unit;
             }, (err, st) => err is ConnectionFailure ? err : ConnectionFailure.unexpected(err, st)),
           );
+}
+
+extension on Completer<void> {
+  void completeOnce() {
+    if (!isCompleted) complete();
+  }
 }
