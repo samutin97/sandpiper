@@ -12,4 +12,9 @@
     <string name="restore_open_app">The tunnel stopped: Android no longer allows it. Open the app to allow the VPN again.</string>
     <string name="mode_vpn">VPN</string>
     <string name="mode_proxy">Proxy</string>
+    <!-- the question about the last resort, as in the app (fork.tiers) -->
+    <string name="tier_channel">Last resort</string>
+    <string name="tier_confirm_title">The other options do not work. Use the last resort?</string>
+    <string name="tier_confirm_body">The main and reserve options do not work in this network, and there is no connection until you decide. The last resort, %1$s, may draw attention to the server\'s address: use it briefly.</string>
+    <string name="tier_waiting">No connection: the last resort waits for your choice</string>
 </resources>

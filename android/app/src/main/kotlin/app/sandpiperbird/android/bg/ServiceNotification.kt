@@ -42,7 +42,9 @@ import kotlinx.coroutines.CancellationException
  * Title: the active profile. Text: the outbound in use, prefixed with the live speed when
  * "Display speed in notification" is on. Header: VPN or Proxy. Everything comes from the core
  * (SystemInfo), so a profile or outbound switched while connected shows up within one poll.
- * Polling stops while the screen is off and nothing is re-posted when nothing changed.
+ * Nothing is re-posted when nothing changed. With the screen off it polls once every
+ * [screenOffInterval], for the question about the last resort only ([TierPrompt], which also turns
+ * the text into "no connection" while the tunnel waits for the user).
  */
 class ServiceNotification(private val status: MutableLiveData<Status>, private val service: Service) : BroadcastReceiver() {
     companion object {
@@ -50,6 +52,7 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
         private const val notificationChannel = "service"
         private const val speedInterval = 1_000L
         private const val idleInterval = 5_000L
+        private const val screenOffInterval = 30_000L
         val flags =
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
 
@@ -64,6 +67,10 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var pollJob: Job? = null
     private var receiverRegistered = false
+    private val tierPrompt = TierPrompt(service)
+
+    @Volatile
+    private var screenOn = true
 
     /** What is on screen right now (title, text, header); an unchanged refresh is skipped. */
     private var shown: Triple<String, String, String>? = null
@@ -171,13 +178,21 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
 
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
-            Intent.ACTION_SCREEN_ON -> startPolling()
-            Intent.ACTION_SCREEN_OFF -> stopPolling()
+            Intent.ACTION_SCREEN_ON -> {
+                screenOn = true
+                startPolling()
+            }
+            Intent.ACTION_SCREEN_OFF -> {
+                // slower, for the question about the last resort (a sound tells the user even so)
+                screenOn = false
+                startPolling()
+            }
         }
     }
 
     fun close() {
         stopPolling()
+        tierPrompt.close()
         synchronized(lock) {
             active = false
             shown = null
@@ -193,8 +208,8 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
 
     private fun startPolling() {
         pollJob?.cancel()
-        val showSpeed = Settings.dynamicNotification
-        val interval = if (showSpeed) speedInterval else idleInterval
+        val showSpeed = Settings.dynamicNotification && screenOn
+        val interval = if (!screenOn) screenOffInterval else if (showSpeed) speedInterval else idleInterval
         pollJob = scope.launch {
             // Made inside the loop: with mTLS the client needs the core's server certificate, which
             // exists only once the core is set up, so building it early fails until then.
@@ -228,8 +243,12 @@ class ServiceNotification(private val status: MutableLiveData<Status>, private v
     }
 
     private fun update(previous: SystemInfo?, info: SystemInfo, showSpeed: Boolean) {
+        tierPrompt.update(info.tier_confirm)
         val outbound = info.current_outbound.ifBlank { service.getString(R.string.status_started) }
-        val text = if (showSpeed && previous != null) {
+        val text = if (info.tier_confirm.isNotEmpty()) {
+            // held for the user's decision: the outbound in use is none
+            service.getString(R.string.tier_waiting)
+        } else if (showSpeed && previous != null) {
             val up = Libbox.formatBytes(info.uplink_total - previous.uplink_total)
             val down = Libbox.formatBytes(info.downlink_total - previous.downlink_total)
             "$outbound  ·  ↑ $up/s  ↓ $down/s"
