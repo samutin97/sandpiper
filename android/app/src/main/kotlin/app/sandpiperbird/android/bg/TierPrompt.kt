@@ -91,8 +91,12 @@ class TierPrompt(private val service: Service) {
                     NotificationChannel(channel, service.getString(R.string.tier_channel), NotificationManager.IMPORTANCE_HIGH).apply {
                         enableVibration(true)
                         vibrationPattern = vibration
-                        // the lock screen shows the public version: no connection, not the proxy
-                        lockscreenVisibility = Notification.VISIBILITY_PRIVATE
+                        // The channel's lock screen visibility is not ours to set: for a channel an app creates,
+                        // the system's PreferencesHelper.createNotificationChannel (the branch for a new
+                        // channel) does `if (fromTargetApp) channel.setLockscreenVisibility(r.visibility)`, the
+                        // package's own setting (VISIBILITY_NO_OVERRIDE, -1000, unless the user changed it).
+                        // What the lock screen shows is the notification's own visibility (PRIVATE below) and
+                        // its public version, which carries no connection and no proxy.
                     }
                 )
             }
