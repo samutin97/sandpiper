@@ -115,6 +115,9 @@ class TierPrompt(private val service: Service) {
                 .setDefaults(NotificationCompat.DEFAULT_SOUND or NotificationCompat.DEFAULT_LIGHTS)
                 .setVibrate(vibration)
                 .setAutoCancel(true)
+                // P-2: a group of its own, not bundled with the service's notification (a first tap
+                // only opened the bundle, and the title was cut)
+                .setGroup(channel)
                 .setContentIntent(open)
                 // the lock screen: the app's name and that there is no connection, not the proxy
                 .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)

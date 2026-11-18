@@ -10,7 +10,7 @@
     <string name="restore_tap">Туннель остановился, хотя был включён. Нажмите, чтобы включить снова.</string>
     <string name="restore_open_app">Туннель остановлен: Android больше не разрешает его. Откройте приложение, чтобы снова разрешить VPN.</string>
     <string name="tier_channel">Последний резерв</string>
-    <string name="tier_confirm_title">Остальные варианты не работают. Включить последний резерв?</string>
+    <string name="tier_confirm_title">Включить последний резерв?</string>
     <string name="tier_confirm_body">Основные и резервные варианты в этой сети не работают, и пока вы не решите, соединения нет. Последний резерв, %1$s, может привлечь внимание к адресу сервера — пользуйтесь им недолго.</string>
     <string name="tier_waiting">Нет соединения: последний резерв ждёт вашего решения</string>
 </resources>
