@@ -146,15 +146,20 @@ void _toConsole(LogRecord r) {
 
 // ---------------------------------------------------------------------- file
 
-/// Errors only.
+/// The quietest level app.log keeps.
+const fileLogLevel = Level.WARNING;
+
+/// Warnings and errors (the level of [fileLogLevel]).
 ///
-/// The file exists to survive a crash, and everything quieter than an error is
+/// The file exists to survive a crash, and everything quieter than a warning is
 /// already somewhere better: the page reads the in-memory ring, and the engine
-/// keeps its own complete log in data/box.log. Narrowing it to errors is also
-/// what lets the file stay unbounded — it grows by the handful, not by the
-/// thousand.
+/// keeps its own complete log in data/box.log. A warning goes to the file too:
+/// it is what a report needs ("the core could not open the local port …",
+/// "core stopped with an error …"), and it was only on the page, gone with the
+/// app. Narrowing it to warnings and errors is also what lets the file stay
+/// unbounded: it grows by the handful, not by the thousand.
 void _toFile(LogRecord r) {
-  if (r.level < Level.SEVERE) return;
+  if (r.level < fileLogLevel) return;
   // the error itself, or the line says that something failed but not what
   final error = r.error;
   writeLogLine(error == null ? formatRecord(r) : '${formatRecord(r)}: ${'$error'.replaceAll('\n', ' ')}');
