@@ -15,7 +15,8 @@ import 'package:meta/meta.dart';
 /// - `v` (required): the version, only `1` is known.
 /// - `cur` (required): what the subscription that sent the header is, `main` or `warp`.
 /// - `alt` (required): what the other one is, the other of the two.
-/// - `alt-url` (required): the other subscription's whole link, https, in base64url without `=`.
+/// - `alt-url` (required): the other subscription's whole link, https, on the host of the subscription that sent
+///   the header, in base64url without `=`.
 ///   It is a secret like any subscription link: the app never shows it nor writes it to a log.
 ///
 /// A header with a known key twice, a version this app does not know, a key missing or with a value
@@ -43,13 +44,19 @@ class ProfileExits {
 
   /// The pair of a header value, or null for none: no header, or one that is not valid (see
   /// [parseVerdict] to tell them apart).
-  static ProfileExits? parse(Object? value) => parseVerdict(value).exits;
+  static ProfileExits? parse(Object? value, {String? sourceUrl}) => parseVerdict(value, sourceUrl: sourceUrl).exits;
 
   /// The pair of a header value, and why there is none when there is none. [ExitsVerdict.absent]
   /// is no header at all; the others are a header that was dropped.
-  static ExitsVerdict parseVerdict(Object? value) {
+  ///
+  /// With [sourceUrl], the link of the subscription whose answer carried the header, the pair's link
+  /// must be on the same host (any case), port and scheme: an answer can not send the app to another
+  /// host. Without it (a header already kept) there is no such check.
+  static ExitsVerdict parseVerdict(Object? value, {String? sourceUrl}) {
     if (value == null) return const ExitsVerdict.absent();
-    if (value is List) return value.length == 1 ? parseVerdict(value.first) : const ExitsVerdict.invalid();
+    if (value is List) {
+      return value.length == 1 ? parseVerdict(value.first, sourceUrl: sourceUrl) : const ExitsVerdict.invalid();
+    }
     if (value is! String) return const ExitsVerdict.invalid();
     final text = value.trim();
     if (text.isEmpty) return const ExitsVerdict.absent();
@@ -74,7 +81,7 @@ class ProfileExits {
     final alternative = ExitRole.tryParse(known['alt']);
     if (current == null || alternative == null || current == alternative) return const ExitsVerdict.invalid();
     final url = decodeUrl(known['alt-url']);
-    if (url == null) return const ExitsVerdict.invalid();
+    if (url == null || (sourceUrl != null && !sameOrigin(url, sourceUrl))) return const ExitsVerdict.invalid();
     return ExitsVerdict._(ProfileExits(current: current, alternative: alternative, alternativeUrl: url));
   }
 
@@ -88,6 +95,16 @@ class ProfileExits {
       return null;
     }
     return isSubscriptionUrl(url) ? url : null;
+  }
+
+  /// Whether [url] is on the host (any case), port and scheme of [source].
+  static bool sameOrigin(String url, String source) {
+    final a = Uri.tryParse(url.trim());
+    final b = Uri.tryParse(source.trim());
+    if (a == null || b == null || a.host.isEmpty || b.host.isEmpty) return false;
+    return a.scheme.toLowerCase() == b.scheme.toLowerCase() &&
+        a.host.toLowerCase() == b.host.toLowerCase() &&
+        a.port == b.port;
   }
 
   /// Whether [url] is a link the app downloads a subscription from: https, a host, no blank or

@@ -126,7 +126,11 @@ class ProfileParser with InfraLogger {
   }) => _downloadProfile(url, tempFilePath, cancelToken).flatMap(
     (remoteHeaders) =>
         TaskEither.fromEither(
-          populateHeaders(content: File(tempFilePath).readAsStringSync(), remoteHeaders: remoteHeaders),
+          populateHeaders(
+            content: File(tempFilePath).readAsStringSync(),
+            remoteHeaders: remoteHeaders,
+            sourceUrl: url,
+          ),
         ).flatMap(
           (populatedHeaders) => _expandLinksInFile(tempFilePath, cancelToken).flatMap(
             (_) => TaskEither.fromEither(
@@ -210,7 +214,11 @@ class ProfileParser with InfraLogger {
   }) => _downloadProfile(url, tempFilePath, cancelToken).flatMap(
     (remoteHeaders) =>
         TaskEither.fromEither(
-          populateHeaders(content: File(tempFilePath).readAsStringSync(), remoteHeaders: remoteHeaders),
+          populateHeaders(
+            content: File(tempFilePath).readAsStringSync(),
+            remoteHeaders: remoteHeaders,
+            sourceUrl: url,
+          ),
         ).flatMap(
           (populatedHeaders) => _expandLinksInFile(tempFilePath, cancelToken).flatMap(
             (_) => TaskEither.fromEither(
@@ -348,14 +356,16 @@ class ProfileParser with InfraLogger {
   static Either<ProfileFailure, Map<String, dynamic>> populateHeaders({
     required String content,
     Map<String, dynamic>? remoteHeaders,
+    String? sourceUrl,
   }) => Either.tryCatch(() {
     final contentHeaders = _parseHeadersFromContent(content);
-    return _mergeAndValidateHeaders(contentHeaders, remoteHeaders ?? {});
+    return _mergeAndValidateHeaders(contentHeaders, remoteHeaders ?? {}, sourceUrl);
   }, ProfileFailure.unexpected);
 
   static Map<String, dynamic> _mergeAndValidateHeaders(
     Map<String, dynamic> contentHeaders,
     Map<String, dynamic> remoteHeaders,
+    String? sourceUrl,
   ) {
     for (final entry in contentHeaders.entries) {
       // the path check's endpoints and the ranking come only from the server's HTTP answer, not
@@ -393,7 +403,7 @@ class ProfileParser with InfraLogger {
     // understood (a version this app does not know, a link that is not one) is dropped whole, with a
     // line in the log that says so and never shows the link.
     if (headers.containsKey(ProfileExits.headerName)) {
-      final verdict = ProfileExits.parseVerdict(headers.remove(ProfileExits.headerName));
+      final verdict = ProfileExits.parseVerdict(headers.remove(ProfileExits.headerName), sourceUrl: sourceUrl);
       if (verdict.exits case final exits?) {
         headers[ProfileExits.headerName] = exits.encode();
       } else if (verdict.dropped) {
@@ -526,6 +536,15 @@ class ProfileParser with InfraLogger {
         var name = '';
         if (profile.userOverride?.name case final String oName when oName.isNotBlank) {
           name = oName;
+        }
+
+        // on the other subscription of the profile's pair the name stays what it was: the pair's own
+        // title does not rename the profile (the user's own name still comes first)
+        if (name.isBlank &&
+            profile is RemoteProfileEntity &&
+            profile.userOverride?.exitUrl != null &&
+            profile.name.isNotBlank) {
+          name = profile.name;
         }
 
         if (headers['profile-title'] case final String titleHeader when name.isBlank) {

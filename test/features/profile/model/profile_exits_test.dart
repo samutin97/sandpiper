@@ -115,6 +115,39 @@ void main() {
     });
   });
 
+  group('the host of the pair', () {
+    String header(String url) => _header(url: url);
+    bool accepted(String url, String source) => ProfileExits.parse(header(url), sourceUrl: source) != null;
+
+    test('is the host of the subscription that sent the header', () {
+      expect(accepted(_warp, _main), isTrue);
+      expect(accepted('https://example.org/other/path?x=1', _main), isTrue);
+    });
+
+    test('in any case', () {
+      expect(accepted('https://EXAMPLE.org/sub/warp-token', _main), isTrue);
+      expect(accepted(_warp, 'https://Example.ORG/sub/main-token'), isTrue);
+    });
+
+    test('another host is dropped whole, and so is a host of another level', () {
+      expect(accepted('https://example.net/sub/warp-token', _main), isFalse);
+      expect(accepted('https://sub.example.org/sub/warp-token', _main), isFalse);
+      expect(accepted('https://example.org.evil.example/sub/x', _main), isFalse);
+      expect(accepted(_warp, 'https://sub.example.org/sub/main-token'), isFalse);
+      expect(ProfileExits.parseVerdict(header('https://example.net/x'), sourceUrl: _main).dropped, isTrue);
+    });
+
+    test('the port is the same too', () {
+      expect(accepted('https://example.org:8443/sub/x', _main), isFalse);
+      expect(accepted('https://example.org:443/sub/x', _main), isTrue, reason: '443 is the https port');
+      expect(accepted('https://example.org:8443/sub/x', 'https://example.org:8443/sub/y'), isTrue);
+    });
+
+    test('without a source there is no check (a header already kept)', () {
+      expect(ProfileExits.parse(header('https://example.net/x')), isNotNull);
+    });
+  });
+
   group('the choice of a profile', () {
     test('is offered only with a valid pair', () {
       expect(ExitChoice.offered(_profile()), isFalse);

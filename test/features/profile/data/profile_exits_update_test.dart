@@ -258,6 +258,81 @@ void main() {
     });
   });
 
+  group('the host of the pair in an update', () {
+    test('a main subscription that points its pair to another host has no pair', () async {
+      final server = _Server({
+        _main: _Answer.ok({
+          'profile-exits': _pair(cur: 'main', alt: 'warp', url: 'https://example.net/sub/warp-token'),
+        }),
+      });
+      expect((await update(server, _profile())).exits, isNull);
+    });
+
+    test('a pair subscription that points its pair to another host is gone: back to the home link', () async {
+      final server = _Server({
+        _warp: _Answer.ok({
+          'profile-exits': _pair(cur: 'warp', alt: 'main', url: 'https://example.net/sub/main-token'),
+        }),
+        _main: _mainAnswer,
+      });
+      final updated = await update(server, _profile(exitUrl: _warp));
+      expect(server.asked, [_warp, _main]);
+      expect(updated.userOverride?.exitUrl, isNull);
+    });
+
+    test('the host is checked against the link just downloaded, not the own link of the profile', () async {
+      const other = 'https://other.example.net/sub/warp-token';
+      final server = _Server({
+        other: _Answer.ok({'profile-exits': _pair(cur: 'warp', alt: 'main', url: 'https://other.example.net/sub/m')}),
+      });
+      final updated = await update(server, _profile(exitUrl: other));
+      expect(updated.userOverride?.exitUrl, other);
+      expect(updated.exits?.current, ExitRole.warp);
+    });
+  });
+
+  group('the name of a profile on the other of its pair', () {
+    final warpAnswer = _Answer.ok({
+      'profile-exits': _pair(cur: 'warp', alt: 'main', url: _main),
+      'profile-title': 'Warp title',
+      'subscription-userinfo': 'upload=1; download=2; total=100; expire=0',
+      'profile-update-interval': '6',
+    });
+
+    test('stays what it was; the traffic and the interval are those of the pair', () async {
+      final server = _Server({_warp: warpAnswer});
+      final updated = await update(server, _profile(exitUrl: _warp)) as RemoteProfileEntity;
+      expect(updated.name, 'subscription');
+      expect(updated.subInfo?.upload, 1);
+      expect(updated.subInfo?.download, 2);
+      expect(updated.populatedHeaders?['profile-update-interval'], '6');
+    });
+
+    test('a switch keeps it as well', () async {
+      final server = _Server({_warp: warpAnswer});
+      final profile = _profile().copyWith(userOverride: const UserOverride(exitUrl: _warp));
+      expect((await update(server, profile, switchTo: ExitRole.warp)).name, 'subscription');
+    });
+
+    test('the name the user gave still comes first', () async {
+      final server = _Server({_warp: warpAnswer});
+      final profile = _profile().copyWith(
+        userOverride: const UserOverride(exitUrl: _warp, name: 'mine'),
+      );
+      expect((await update(server, profile)).name, 'mine');
+    });
+
+    test('on the own link of the profile the title of its subscription names it, as before', () async {
+      final server = _Server({
+        _main: _Answer.ok({
+          'profile-exits': _pair(cur: 'main', alt: 'warp', url: _warp),
+          'profile-title': 'Main title',
+        }),
+      });
+      expect((await update(server, _profile())).name, 'Main title');
+    });
+  });
+
   group('what is sent to the core', () {
     String overrideOf(RemoteProfileEntity profile) => profile.profileOverride();
     Map<String, dynamic> decoded(String text) => jsonDecode(text) as Map<String, dynamic>;

@@ -325,7 +325,7 @@ class ProfileRepositoryImpl with ExceptionHandler, InfraLogger implements Profil
               (_) =>
                   TaskEither.fromEither(
                     _profileParser.offlineUpdate(
-                      profile: oProfile.copyWith(userOverride: profile.userOverride),
+                      profile: oProfile.copyWith(userOverride: keepExit(profile.userOverride, oProfile.userOverride)),
                       tempFilePath: tempFile.path,
                     ),
                   ).flatMap(
@@ -352,6 +352,14 @@ class ProfileRepositoryImpl with ExceptionHandler, InfraLogger implements Profil
           }
         });
       });
+
+  /// The choices [edited] by a screen opened some time ago, with the way out of the pair as it is
+  /// [stored] now: a screen does not change it, and must not put back the one it opened with.
+  @visibleForTesting
+  static UserOverride? keepExit(UserOverride? edited, UserOverride? stored) {
+    if (stored?.exitUrl == null && edited?.exitUrl == null) return edited;
+    return (edited ?? const UserOverride()).copyWith(exitUrl: stored?.exitUrl);
+  }
 
   @override
   TaskEither<ProfileFailure, Unit> validateConfig(String path, String tempPath, String? profileOverride, bool debug) =>

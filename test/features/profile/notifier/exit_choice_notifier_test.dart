@@ -157,7 +157,7 @@ void main() {
     expect(connection.reconnected, isEmpty);
   });
 
-  test('back to the main one goes through the profile\'s own link', () async {
+  test("back to the main one goes through the profile's own link", () async {
     final (container, repository) = await open();
     final notifier = container.read(exitChoiceNotifierProvider.notifier);
     await notifier.apply(_before, ExitRole.warp);

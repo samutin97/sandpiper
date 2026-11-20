@@ -42,11 +42,17 @@ class _FakeParser implements ProfileParser {
     ExitRole? switchTo,
   }) => _download(tempFilePath);
 
+  /// The profiles an offline update was made with.
+  static final offlineSeen = <ProfileEntity>[];
+
   @override
   Either<ProfileFailure, ProfileEntriesCompanion> offlineUpdate({
     required ProfileEntity profile,
     required String tempFilePath,
-  }) => right(const ProfileEntriesCompanion());
+  }) {
+    offlineSeen.add(profile);
+    return right(const ProfileEntriesCompanion());
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -170,6 +176,30 @@ void main() {
       expect(result.isRight(), true);
       expect(repo.tempFileSeen, true);
       expect(leftTempFiles(), isEmpty);
+    });
+
+    // the details screen opened, the way out switched, the screen saved: the way out stays
+    test("offlineUpdate keeps the way out of the pair as it is stored, not as the screen opened with it", () async {
+      const warp = 'https://example.com/warp';
+      _FakeParser.offlineSeen.clear();
+      final stored = remoteEntry.copyWith(userOverride: Value(const UserOverride(exitUrl: warp, keepTop: 1).toStr()));
+      final repo = _Repo(_FakeDataSource(stored), paths);
+      // the screen opened before the switch: no way out in its copy, and a rename in it
+      final opened = remoteEntry.toEntity().copyWith(userOverride: const UserOverride(name: 'mine'));
+      expect((await repo.offlineUpdate(opened, '{}').run()).isRight(), true);
+      final saved = _FakeParser.offlineSeen.single.userOverride!;
+      expect(saved.exitUrl, warp);
+      expect(saved.name, 'mine', reason: "the screen's own changes are saved");
+      expect(saved.keepTop, isNull);
+      // and the other way: the screen opened on the pair, saved after a switch back
+      _FakeParser.offlineSeen.clear();
+      final back = _Repo(
+        _FakeDataSource(remoteEntry.copyWith(userOverride: Value(const UserOverride().toStr()))),
+        paths,
+      );
+      final onPair = remoteEntry.toEntity().copyWith(userOverride: const UserOverride(exitUrl: warp));
+      await back.offlineUpdate(onPair, '{}').run();
+      expect(_FakeParser.offlineSeen.single.userOverride?.exitUrl, isNull);
     });
   });
 
