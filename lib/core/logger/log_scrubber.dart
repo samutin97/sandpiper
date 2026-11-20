@@ -22,11 +22,14 @@ String scrubSecrets(String text) {
   // key=value and "key": "value" secrets
   out = out.replaceAllMapped(
     RegExp(
-      r'''(\b(?:password|passwd|pass|psk|private_key|privatekey|preshared_key|presharedkey|public_key|publickey|pbk|sid|short_id|uuid|token|secret|auth|header_protection_key|license[_-]?key)\b"?\s*[:=]\s*"?)([^\s",;&]+)''',
+      r'''(\b(?:password|passwd|pass|psk|private_key|privatekey|preshared_key|presharedkey|public_key|publickey|pbk|sid|short_id|uuid|token|secret|auth|header_protection_key|license[_-]?key|alt-url|alt_url)\b"?\s*[:=]\s*"?)([^\s",;&]+)''',
       caseSensitive: false,
     ),
     (m) => '${m[1]}[redacted]',
   );
+  // the other subscription of a profile's pair (the profile-exits header): its link in base64url, which
+  // starts the same for any https link, whatever key it is under
+  out = out.replaceAll(RegExp('(?<![A-Za-z0-9_+/-])aHR0cHM6Ly[A-Za-z0-9_+/-]*=*'), '[link]');
   // UUIDs
   out = out.replaceAll(
     RegExp(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', caseSensitive: false),

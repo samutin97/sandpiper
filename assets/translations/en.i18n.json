@@ -1366,6 +1366,17 @@
     }
   },
   "fork": {
+    "exits": {
+      "title": "Way out to the internet",
+      "main": "Main",
+      "warp": "Cloudflare WARP",
+      "warpHint": "if a site does not let the main address in",
+      "switching": "Switching the way out…",
+      "switched": "Way out to the internet: $name",
+      "unavailable": "The other way out is not available",
+      "failed": "Could not switch the way out. The way out before stays.",
+      "fellBack": "The server no longer offers the other way out. Back on the main one."
+    },
     "direct": {
       "title": "Update without the VPN?",
       "message": "The VPN is not connected, so this request goes straight through your internet provider: it sees that the device contacts the subscription's server (its name, not the content). Connect first to send it through the tunnel. Continue without the VPN?",

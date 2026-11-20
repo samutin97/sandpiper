@@ -10,6 +10,7 @@ import 'package:hiddify/features/profile/data/profile_data_source.dart';
 import 'package:hiddify/features/profile/data/profile_parser.dart';
 import 'package:hiddify/features/profile/data/profile_path_resolver.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
+import 'package:hiddify/features/profile/model/profile_exits.dart';
 import 'package:hiddify/features/profile/model/profile_failure.dart';
 import 'package:hiddify/features/profile/model/profile_sort_enum.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
@@ -35,6 +36,16 @@ abstract interface class ProfileRepository {
 
   /// Adds the profile at [url], or updates it when one with that URL exists. With [activate] (the user adding a
   /// profile, not an update), an existing one becomes the active profile, as a new one does.
+  /// Takes the other way out of the profile's pair: downloads the subscription of [target] (the
+  /// profile's own link, or the other of the pair, as [userOverride] says), and only when it loads,
+  /// carries the pair and is the one asked for, stores it with [userOverride]. Any failure leaves the
+  /// profile as it was.
+  TaskEither<ProfileFailure, Unit> switchExit(
+    String id,
+    UserOverride userOverride,
+    ExitRole target, {
+    CancelToken? cancelToken,
+  });
   TaskEither<ProfileFailure, Unit> upsertRemote(
     String url, {
     UserOverride? userOverride,
@@ -165,11 +176,31 @@ class ProfileRepositoryImpl with ExceptionHandler, InfraLogger implements Profil
   }
 
   @override
+  TaskEither<ProfileFailure, Unit> switchExit(
+    String id,
+    UserOverride userOverride,
+    ExitRole target, {
+    CancelToken? cancelToken,
+  }) => getById(id).flatMap(
+    (profile) => profile is RemoteProfileEntity
+        ? _upsertRemote(profile.url, userOverride: userOverride, cancelToken: cancelToken, switchTo: target)
+        : TaskEither.left(const ProfileFailure.notFound()),
+  );
+
+  @override
   TaskEither<ProfileFailure, Unit> upsertRemote(
     String url, {
     UserOverride? userOverride,
     CancelToken? cancelToken,
     bool activate = false,
+  }) => _upsertRemote(url, userOverride: userOverride, cancelToken: cancelToken, activate: activate);
+
+  TaskEither<ProfileFailure, Unit> _upsertRemote(
+    String url, {
+    UserOverride? userOverride,
+    CancelToken? cancelToken,
+    bool activate = false,
+    ExitRole? switchTo,
   }) =>
       TaskEither.tryCatch(() async {
         final profEntity = await _profileDataSource.getByUrl(url).then((profEntry) => profEntry?.toEntity());
@@ -191,7 +222,7 @@ class ProfileRepositoryImpl with ExceptionHandler, InfraLogger implements Profil
             profEntity = profEntity.copyWith(userOverride: userOverride);
           }
           task = _profileParser
-              .updateRemote(rp: profEntity, tempFilePath: tempFile.path, cancelToken: cancelToken)
+              .updateRemote(rp: profEntity, tempFilePath: tempFile.path, cancelToken: cancelToken, switchTo: switchTo)
               .flatMap(
                 (profEntity) =>
                     validateConfig(

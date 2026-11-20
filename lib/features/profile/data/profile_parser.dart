@@ -9,6 +9,7 @@ import 'package:hiddify/core/http_client/dio_http_client.dart';
 import 'package:hiddify/core/model/optional_range.dart';
 import 'package:hiddify/features/profile/data/profile_data_mapper.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
+import 'package:hiddify/features/profile/model/profile_exits.dart';
 import 'package:hiddify/features/profile/model/profile_failure.dart';
 import 'package:hiddify/features/profile/model/profile_policy.dart';
 import 'package:hiddify/features/profile/model/profile_probe.dart';
@@ -16,6 +17,8 @@ import 'package:hiddify/singbox/model/singbox_config_enum.dart';
 import 'package:hiddify/singbox/model/singbox_proxy_type.dart';
 import 'package:hiddify/utils/utils.dart';
 import 'package:meta/meta.dart';
+
+final _staticLoggy = infraLogger('ProfileParser');
 
 /// parse profile subscription url and headers for data
 ///
@@ -57,7 +60,10 @@ class ProfileParser with InfraLogger {
     'keep-tags',
     // the server's ranking of its proxies, with the host and test path its checks use (profile-policy)
     'tier-policy',
+    // which way out the profile is on (main or warp), for the journal; never the pair's link
+    'exit-choice',
   ];
+
   /// The headers a subscription may send. Not `extra-security` (it would chain WARP or Psiphon, servers
   /// of third parties, behind the user's) nor `ipinfo-url` (a third party told the exit IP): a link must
   /// not change settings (H-04).
@@ -72,6 +78,7 @@ class ProfileParser with InfraLogger {
     'keep-top',
     ProfileProbe.headerName,
     ProfilePolicy.headerName,
+    ProfileExits.headerName,
   ];
 
   /// Whether [url] is an https URL with a host: the only kind of subscription downloaded.
@@ -140,11 +147,67 @@ class ProfileParser with InfraLogger {
         ),
   );
 
+  /// Updates [rp] from its subscription: the profile's own link, or the other of its pair while the
+  /// user has chosen that as the way out ([UserOverride.exitUrl]).
+  ///
+  /// On the other of the pair, the update falls back to the profile's own link, and the way out to
+  /// the main one ([exitFallback]), when the pair is gone: that subscription is not found or not
+  /// allowed any more, or its server stopped sending the pair. Any other failure (no network, a
+  /// server error) fails the update as any other, and the choice stays.
+  ///
+  /// With [switchTo], the update is the user's choice of that way out, from the link [rp] already
+  /// carries in its override: it must come with a pair whose current is [switchTo], and any failure
+  /// fails it (nothing is stored, nothing falls back), so the way out before stays.
   TaskEither<ProfileFailure, ProfileEntriesCompanion> updateRemote({
     required RemoteProfileEntity rp,
     required String tempFilePath,
     CancelToken? cancelToken,
-  }) => _downloadProfile(rp.url, tempFilePath, cancelToken).flatMap(
+    ExitRole? switchTo,
+  }) => updateRemoteEntity(rp: rp, tempFilePath: tempFilePath, cancelToken: cancelToken, switchTo: switchTo).flatMap(
+    (profEntity) => TaskEither.fromEither(Either.tryCatch(() => profEntity.toUpdateEntry(), ProfileFailure.unexpected)),
+  );
+
+  /// [updateRemote] up to the profile as it is to be stored.
+  TaskEither<ProfileFailure, ProfileEntity> updateRemoteEntity({
+    required RemoteProfileEntity rp,
+    required String tempFilePath,
+    CancelToken? cancelToken,
+    ExitRole? switchTo,
+  }) {
+    final onOther = rp.userOverride?.exitUrl != null || switchTo != null;
+    final first = _updateFrom(rp, rp.fetchUrl, tempFilePath, cancelToken, keepRanking: switchTo == null);
+    if (!onOther) return first;
+    if (switchTo != null) {
+      return first.flatMap(
+        (updated) => updated.exits?.current == switchTo
+            ? TaskEither<ProfileFailure, ProfileEntity>.right(updated)
+            : TaskEither<ProfileFailure, ProfileEntity>.left(const ProfileFailure.exitUnavailable()),
+      );
+    }
+    return first
+        .flatMap(
+          (updated) => updated.exits != null
+              ? TaskEither<ProfileFailure, ProfileEntity>.right(updated)
+              : TaskEither<ProfileFailure, ProfileEntity>.left(const ProfileFailure.exitUnavailable()),
+        )
+        .orElse((failure) {
+          if (!exitGone(failure)) return TaskEither<ProfileFailure, ProfileEntity>.left(failure);
+          loggy.warning('the other way out of the profile is gone, back to the main one');
+          final back = rp.copyWith(userOverride: exitFallback(rp.userOverride));
+          return _updateFrom(back, back.fetchUrl, tempFilePath, cancelToken, keepRanking: false);
+        });
+  }
+
+  /// Downloads [url] into [tempFilePath] and gives [rp] with what came: its headers (the ranking of
+  /// [rp] kept when the update came without one, unless [keepRanking] is off, as it is when the
+  /// subscription is not the one the ranking came with), its name and its traffic.
+  TaskEither<ProfileFailure, ProfileEntity> _updateFrom(
+    RemoteProfileEntity rp,
+    String url,
+    String tempFilePath,
+    CancelToken? cancelToken, {
+    required bool keepRanking,
+  }) => _downloadProfile(url, tempFilePath, cancelToken).flatMap(
     (remoteHeaders) =>
         TaskEither.fromEither(
           populateHeaders(content: File(tempFilePath).readAsStringSync(), remoteHeaders: remoteHeaders),
@@ -154,13 +217,32 @@ class ProfileParser with InfraLogger {
               parse(
                 tempFilePath: tempFilePath,
                 profile: rp.copyWith(
-                  populatedHeaders: keepPolicy(previous: rp.populatedHeaders, fresh: populatedHeaders),
+                  populatedHeaders: keepRanking
+                      ? keepPolicy(previous: rp.populatedHeaders, fresh: populatedHeaders)
+                      : populatedHeaders,
                 ),
-              ).flatMap((profEntity) => Either.tryCatch(() => profEntity.toUpdateEntry(), ProfileFailure.unexpected)),
+              ),
             ),
           ),
         ),
   );
+
+  /// Whether a subscription failed because it is not there (or not for this user) any more: HTTP
+  /// 403, 404 or 410. A server that is down, or a network that is, is not.
+  @visibleForTesting
+  static bool exitGone(ProfileFailure failure) => switch (failure) {
+    ProfileNotFoundFailure() || ProfileExitUnavailableFailure() => true,
+    ProfileUnexpectedFailure(:final error) when error is DioException => const {
+      403,
+      404,
+      410,
+    }.contains(error.response?.statusCode),
+    _ => false,
+  };
+
+  /// [override] with the way out back on the profile's own link.
+  @visibleForTesting
+  static UserOverride? exitFallback(UserOverride? override) => override?.copyWith(exitUrl: null);
 
   Either<ProfileFailure, ProfileEntriesCompanion> offlineUpdate({
     required ProfileEntity profile,
@@ -278,7 +360,11 @@ class ProfileParser with InfraLogger {
     for (final entry in contentHeaders.entries) {
       // the path check's endpoints and the ranking come only from the server's HTTP answer, not
       // from a text
-      if (entry.key == ProfileProbe.headerName || entry.key == ProfilePolicy.headerName) continue;
+      if (entry.key == ProfileProbe.headerName ||
+          entry.key == ProfilePolicy.headerName ||
+          entry.key == ProfileExits.headerName) {
+        continue;
+      }
       if (!remoteHeaders.keys.contains(entry.key)) {
         remoteHeaders[entry.key] = entry.value;
       }
@@ -303,6 +389,21 @@ class ProfileParser with InfraLogger {
         headers[ProfilePolicy.receivedAtKey] = '${DateTime.now().millisecondsSinceEpoch ~/ 1000}';
       }
     }
+    // the pair of ways out: kept only valid, in its canonical form. A header that is there and is not
+    // understood (a version this app does not know, a link that is not one) is dropped whole, with a
+    // line in the log that says so and never shows the link.
+    if (headers.containsKey(ProfileExits.headerName)) {
+      final verdict = ProfileExits.parseVerdict(headers.remove(ProfileExits.headerName));
+      if (verdict.exits case final exits?) {
+        headers[ProfileExits.headerName] = exits.encode();
+      } else if (verdict.dropped) {
+        _staticLoggy.warning(
+          verdict.reason == ExitsDrop.unknownVersion
+              ? 'the profile-exits header of the subscription is of a version this app does not know, ignored'
+              : 'the profile-exits header of the subscription can not be read, ignored',
+        );
+      }
+    }
     return headers;
   }
 
@@ -323,11 +424,7 @@ class ProfileParser with InfraLogger {
     final received = DateTime.fromMillisecondsSinceEpoch(at * 1000);
     final age = (now ?? DateTime.now()).difference(received);
     if (age.isNegative || age > policy.ttl) return fresh;
-    return {
-      ...fresh,
-      ProfilePolicy.headerName: policy.encode(),
-      ProfilePolicy.receivedAtKey: '$at',
-    };
+    return {...fresh, ProfilePolicy.headerName: policy.encode(), ProfilePolicy.receivedAtKey: '$at'};
   }
 
   static Map<String, dynamic> _parseHeadersFromContent(String content) {
@@ -627,6 +724,12 @@ class ProfileParser with InfraLogger {
     return {'enable-fragment': true, 'fragment-size': size, 'fragment-sleep': sleep};
   }
 
+  /// The way out a profile is on: what its subscription says it is (`profile-exits`), or null when
+  /// the server gave no pair (the profile has no choice, and the journal says nothing of it).
+  @visibleForTesting
+  static ExitRole? exitRoleOf(Map<String, dynamic>? headers) =>
+      ProfileExits.parse(headers?[ProfileExits.headerName])?.current;
+
   static String profileOverride({
     required Map<String, dynamic>? populatedHeaders,
     required UserOverride? userOverride,
@@ -682,6 +785,11 @@ class ProfileParser with InfraLogger {
     if (userOverride?.keepTags case final tags? when tags.isNotEmpty) {
       headers['keep-tags'] = tags;
     }
+
+    // the way out in use, main or warp, for the core's journal of a block; the pair's link is not
+    // among the settings (and the header is not in the list of what is sent)
+    headers.remove('exit-choice');
+    if (exitRoleOf(populatedHeaders) case final role?) headers['exit-choice'] = role.key;
 
     headers.removeWhere(
       (key, value) => !allowedOverrideConfigs.contains(key) || value == null || value.toString().isEmpty,

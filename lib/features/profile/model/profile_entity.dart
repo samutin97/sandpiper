@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:dartx/dartx.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:hiddify/features/profile/data/profile_parser.dart';
+import 'package:hiddify/features/profile/model/profile_exits.dart';
 import 'package:hiddify/features/profile/model/profile_policy.dart';
 import 'package:hiddify/features/profile/model/profile_probe.dart';
 
@@ -56,10 +57,23 @@ sealed class ProfileEntity with _$ProfileEntity {
   /// The path check's endpoints the subscription's server gave (`profile-probe`), if any.
   ProfileProbe? get probe => ProfileProbe.parse(populatedHeaders?[ProfileProbe.headerName]);
 
+  /// The pair of ways out (`profile-exits`) the subscription's server gave, if it gave a valid one.
+  ProfileExits? get exits => ProfileExits.parse(populatedHeaders?[ProfileExits.headerName]);
+
   /// The server's ranking of its proxies (`profile-policy`), if it gave a non-empty one.
   ProfilePolicy? get policy {
     final policy = ProfilePolicy.parse(populatedHeaders?[ProfilePolicy.headerName]);
     return policy == null || policy.isEmpty ? null : policy;
+  }
+}
+
+extension RemoteProfileExit on RemoteProfileEntity {
+  /// The link the subscription is downloaded from: the profile's own link (the one the user added,
+  /// and the only one an older version knows), or the other of the pair while the user has chosen
+  /// its way out ([UserOverride.exitUrl]).
+  String get fetchUrl {
+    final exit = userOverride?.exitUrl;
+    return exit != null && ProfileExits.isSubscriptionUrl(exit) ? exit : url;
   }
 }
 
@@ -144,6 +158,13 @@ abstract class UserOverride with _$UserOverride {
     /// The tags of the profile's proxies the user chose to run, and only them, whatever [keepTop]
     /// says, while any of them is still in the profile. Null until the user chose some.
     List<String>? keepTags,
+
+    /// The link of the other subscription of the profile's pair, while the user has chosen it as the
+    /// way out to the internet (see profile_exits.dart): the profile is updated from it, and its own
+    /// link stays as the way back. Null while the profile's own link is in use. A secret like the
+    /// profile's link: never shown, never logged. An older version does not know it and goes on with
+    /// the profile's own link.
+    String? exitUrl,
 
     /// Windows/Linux: whether to prefer elevated admin_bgservice for privileged
     /// proxy features. Subscription sync must not overwrite this field.

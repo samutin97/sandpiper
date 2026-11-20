@@ -3,6 +3,21 @@ import 'package:hiddify/core/logger/log_scrubber.dart';
 
 void main() {
   group('scrubSecrets', () {
+    test("masks the other subscription of a profile's pair, as a header, a pair or alone", () {
+      const link = 'aHR0cHM6Ly9leGFtcGxlLm9yZy9zdWIvd2FycC10b2tlbg';
+      for (final line in [
+        'profile-exits: v=1;cur=main;alt=warp;alt-url=$link',
+        'headers {profile-exits: v=1;cur=main;alt=warp;alt-url=$link, profile-title: x}',
+        'the other one is $link',
+        '"alt-url": "$link"',
+        'alt_url=$link',
+      ]) {
+        final out = scrubSecrets(line);
+        expect(out, isNot(contains(link)), reason: line);
+        expect(out, isNot(contains('aHR0cHM6')), reason: line);
+      }
+    });
+
     test('masks whole proxy and profile links', () {
       final out = scrubSecrets(
         'adding vless://0f1e2d3c-1111-2222-3333-444455556666@a.example.com:443?pbk=ABC#Home and vpn://AAAAeJzzSM3JyVcozy',

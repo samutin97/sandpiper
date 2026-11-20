@@ -16,6 +16,7 @@ import 'package:hiddify/features/profile/data/profile_repository.dart';
 import 'package:hiddify/features/profile/model/profile_entity.dart';
 import 'package:hiddify/features/profile/model/profile_failure.dart';
 import 'package:hiddify/features/profile/notifier/active_profile_notifier.dart';
+import 'package:hiddify/features/profile/notifier/exit_choice_notifier.dart';
 import 'package:hiddify/features/profile/notifier/tunnel_guard.dart';
 import 'package:hiddify/features/settings/data/config_option_repository.dart';
 import 'package:hiddify/utils/riverpod_utils.dart';
@@ -185,7 +186,11 @@ class AddProfileNotifier extends _$AddProfileNotifier with AppLogger {
     state = await AsyncValue.guard(() async {
       if (text.isEmpty) throw const ProfileFailure.invalidConfig();
       return await _profilesRepo
-          .addLocal(text, userOverride: UserOverride(name: name), activate: activate)
+          .addLocal(
+            text,
+            userOverride: UserOverride(name: name),
+            activate: activate,
+          )
           .match(
             (err) {
               loggy.warning("failed to add profile from zip", err);
@@ -255,14 +260,19 @@ class UpdateProfileNotifier extends _$UpdateProfileNotifier with AppLogger {
             (_) async {
               loggy.info('successfully updated profile');
 
+              // the profile as the update stored it: the settings sent to the core are made from
+              // its headers, and the new ones carry the server's new ranking (tier-policy) and
+              // probe. [profile] was read before the update: with it the core kept the old
+              // ranking, over its hot reload and over the restart after one, until the app was
+              // started again (a second server added to the subscription was never tried).
+              final updated = (await _profilesRepo.getById(profile.id).run()).getOrElse((_) => null);
+              // the other way out of the pair was gone: the update took the profile back to the main one
+              if (ExitChoice.fellBack(profile, updated)) {
+                final t = ref.read(translationsProvider).requireValue;
+                ref.read(inAppNotificationControllerProvider).showInfoToast(t.fork.exits.fellBack);
+              }
               await ref.read(activeProfileProvider.future).then((active) async {
                 if (active != null && active.id == profile.id) {
-                  // the profile as the update stored it: the settings sent to the core are made from
-                  // its headers, and the new ones carry the server's new ranking (tier-policy) and
-                  // probe. [profile] was read before the update: with it the core kept the old
-                  // ranking, over its hot reload and over the restart after one, until the app was
-                  // started again (a second server added to the subscription was never tried).
-                  final updated = (await _profilesRepo.getById(profile.id).run()).getOrElse((_) => null);
                   await ref.read(connectionNotifierProvider.notifier).reconnect(updated ?? active);
                 }
               });
