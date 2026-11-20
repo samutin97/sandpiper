@@ -82,6 +82,9 @@ void main() {
   });
 
   testWidgets('shows both ways out in Russian, the main one chosen, with the one-line hint', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     await pump(tester, _profile(header: pair));
     expect(find.text('Выход в интернет'), findsOneWidget);
     expect(find.text('Основной'), findsOneWidget);
@@ -108,5 +111,32 @@ void main() {
     final onWarp = 'v=1;cur=warp;alt=main;alt-url=${_b64('https://example.org/sub/main-token')}';
     await pump(tester, _profile(header: onWarp));
     expect(tester.widget<SegmentedButton<ExitRole>>(find.byType(SegmentedButton<ExitRole>)).selected, {ExitRole.warp});
+  });
+
+  // 480x854 at 240 dpi (the emulator of the acceptance): 360x640 logical pixels, and the same turned.
+  for (final (name, size) in [('a small phone', const Size(360, 640)), ('the same turned', const Size(640, 360))]) {
+    testWidgets('on $name: no overflow, no hint, both ways out inside the screen and tappable', (tester) async {
+      tester.view.physicalSize = size;
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final choice = await pump(tester, _profile(header: pair), width: size.width);
+      expect(tester.takeException(), isNull);
+      expect(find.textContaining('если сайт не пускает'), findsNothing);
+      final screen = Offset.zero & size;
+      for (final label in ['Основной', 'Cloudflare WARP']) {
+        expect(screen.contains(tester.getRect(find.text(label)).center), isTrue, reason: label);
+      }
+      await tester.tap(find.text('Cloudflare WARP'));
+      await tester.pump();
+      expect(choice.chosen, [ExitRole.warp]);
+    });
+  }
+
+  testWidgets('on a tall screen the hint stays', (tester) async {
+    tester.view.physicalSize = const Size(400, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await pump(tester, _profile(header: pair), width: 400);
+    expect(find.textContaining('если сайт не пускает'), findsOneWidget);
   });
 }

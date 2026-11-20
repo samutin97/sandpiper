@@ -12,6 +12,9 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 class ExitChoiceRow extends ConsumerWidget {
   const ExitChoiceRow({super.key});
 
+  /// Below this height (logical pixels) the hint line is left out.
+  static const compactHeight = 700.0;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(activeProfileProvider).valueOrNull;
@@ -20,9 +23,12 @@ class ExitChoiceRow extends ConsumerWidget {
     final t = ref.watch(translationsProvider).requireValue;
     final theme = Theme.of(context);
     final busy = ref.watch(exitChoiceNotifierProvider).isLoading;
+    // on a small or a wide-and-low screen the one-line hint goes: the two ways out stay
+    final size = MediaQuery.sizeOf(context);
+    final compact = size.height < compactHeight || size.width > size.height;
     return Padding(
       key: const ValueKey('exit_choice_row'),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: EdgeInsets.fromLTRB(16, compact ? 4 : 12, 16, compact ? 4 : 0),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 420),
         child: Column(
@@ -45,12 +51,14 @@ class ExitChoiceRow extends ConsumerWidget {
                   ? null
                   : (selection) => ref.read(exitChoiceNotifierProvider.notifier).choose(profile, selection.first),
             ),
-            const Gap(4),
-            Text(
-              '${t.fork.exits.warp}: ${t.fork.exits.warpHint}',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
-            ),
+            if (!compact) ...[
+              const Gap(4),
+              Text(
+                '${t.fork.exits.warp}: ${t.fork.exits.warpHint}',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            ],
           ],
         ),
       ),

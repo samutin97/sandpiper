@@ -70,6 +70,10 @@ class SingboxConfigOption with _$SingboxConfigOption {
     /// The subscription server's ranking of its proxies for the core (`tier-policy`: `policy`,
     /// `probe-host`, `probe-path`), from the active profile only; null without one.
     Map<String, dynamic>? tierPolicy,
+
+    /// The way out to the internet the profile is on, `main` or `warp` (`exit-choice`), for the
+    /// core's journal; null for a profile without a pair of them. Never a link.
+    String? exitChoice,
     @IntervalInSecondsConverter() required Duration urlTestInterval,
     required bool enableClashApi,
     required int clashApiPort,

@@ -158,9 +158,13 @@ class HomePage extends HookConsumerWidget {
                                     child: Column(
                                       mainAxisSize: MainAxisSize.min,
                                       mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [ConnectionButton(), ActiveProxyDelayIndicator(), ExitChoiceRow()],
+                                      children: [ConnectionButton(), ActiveProxyDelayIndicator()],
                                     ),
                                   ),
+                                  // the way out to the internet: below the connect area, not inside the part
+                                  // that centres, so the page counts its height and scrolls to it, and the
+                                  // tab at the bottom edge never stands on it
+                                  ExitChoiceRow(),
                                   // a reserve of the server's rating in use, or the last resort waiting for the user
                                   TierBanner(),
                                   ActiveProxyFooter(),

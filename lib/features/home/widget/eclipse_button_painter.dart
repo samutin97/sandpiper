@@ -1069,7 +1069,9 @@ Path _svgPath(String d) {
 }
 
 abstract final class _HiLogo {
-  static final dot = _svgPath('M54 5C58.418 5 62 8.582 62 13C62 17.418 58.418 21 54 21C49.582 21 46 17.418 46 13C46 8.582 49.582 5 54 5Z');
+  static final dot = _svgPath(
+    'M54 5C58.418 5 62 8.582 62 13C62 17.418 58.418 21 54 21C49.582 21 46 17.418 46 13C46 8.582 49.582 5 54 5Z',
+  );
 
   static final h = _svgPath('M0 40C6 32 13 29 19 30V62H0ZM22 30.5C28 32 35 37 41 38V62H22Z');
 
